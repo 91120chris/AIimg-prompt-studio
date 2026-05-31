@@ -1,0 +1,45 @@
+from pathlib import Path
+
+from app.providers.codex.codex_binary_resolver import ResolvedCodexBinary
+
+
+def build_codex_exec_command(
+    binary: ResolvedCodexBinary,
+    prompt: str,
+    *,
+    model: str | None = None,
+    output_schema_path: str | Path | None = None,
+) -> list[str]:
+    command = [
+        *binary.command_prefix,
+        "--ask-for-approval",
+        "never",
+    ]
+    if model and model != "auto":
+        command.extend(["--model", model])
+    command.append("exec")
+    if output_schema_path is not None:
+        command.extend(["--output-schema", str(output_schema_path)])
+    command.append(prompt)
+    return command
+
+
+def build_codex_image_exec_command(
+    binary: ResolvedCodexBinary,
+    prompt: str,
+    *,
+    model: str | None = None,
+    output_schema_path: str | Path | None = None,
+    reference_image_paths: list[str | Path] | None = None,
+) -> list[str]:
+    command = build_codex_exec_command(
+        binary,
+        prompt,
+        model=model,
+        output_schema_path=output_schema_path,
+    )
+    prompt_arg = command.pop()
+    for image_path in reference_image_paths or []:
+        command.extend(["--image", str(image_path)])
+    command.append(prompt_arg)
+    return command

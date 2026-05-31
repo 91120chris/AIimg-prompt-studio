@@ -1,0 +1,185 @@
+{
+  "$defs": {
+    "BooleanQuestionnaireAnswer": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "boolean",
+          "title": "Kind",
+          "type": "string"
+        },
+        "question_id": {
+          "title": "Question Id",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "question_id",
+        "kind",
+        "value"
+      ],
+      "title": "BooleanQuestionnaireAnswer",
+      "type": "object"
+    },
+    "ChoiceQuestionnaireAnswer": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "choice",
+          "title": "Kind",
+          "type": "string"
+        },
+        "question_id": {
+          "title": "Question Id",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "question_id",
+        "kind",
+        "value"
+      ],
+      "title": "ChoiceQuestionnaireAnswer",
+      "type": "object"
+    },
+    "MultiChoiceQuestionnaireAnswer": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "multi_choice",
+          "title": "Kind",
+          "type": "string"
+        },
+        "question_id": {
+          "title": "Question Id",
+          "type": "string"
+        },
+        "values": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Values",
+          "type": "array"
+        }
+      },
+      "required": [
+        "question_id",
+        "kind",
+        "values"
+      ],
+      "title": "MultiChoiceQuestionnaireAnswer",
+      "type": "object"
+    },
+    "ScaleQuestionnaireAnswer": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "scale",
+          "title": "Kind",
+          "type": "string"
+        },
+        "question_id": {
+          "title": "Question Id",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "question_id",
+        "kind",
+        "value"
+      ],
+      "title": "ScaleQuestionnaireAnswer",
+      "type": "object"
+    },
+    "TextQuestionnaireAnswer": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "text",
+          "title": "Kind",
+          "type": "string"
+        },
+        "question_id": {
+          "title": "Question Id",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "question_id",
+        "kind",
+        "value"
+      ],
+      "title": "TextQuestionnaireAnswer",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "answers": {
+      "items": {
+        "discriminator": {
+          "mapping": {
+            "boolean": "#/$defs/BooleanQuestionnaireAnswer",
+            "choice": "#/$defs/ChoiceQuestionnaireAnswer",
+            "multi_choice": "#/$defs/MultiChoiceQuestionnaireAnswer",
+            "scale": "#/$defs/ScaleQuestionnaireAnswer",
+            "text": "#/$defs/TextQuestionnaireAnswer"
+          },
+          "propertyName": "kind"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/$defs/TextQuestionnaireAnswer"
+          },
+          {
+            "$ref": "#/$defs/ChoiceQuestionnaireAnswer"
+          },
+          {
+            "$ref": "#/$defs/MultiChoiceQuestionnaireAnswer"
+          },
+          {
+            "$ref": "#/$defs/BooleanQuestionnaireAnswer"
+          },
+          {
+            "$ref": "#/$defs/ScaleQuestionnaireAnswer"
+          }
+        ]
+      },
+      "minItems": 1,
+      "title": "Answers",
+      "type": "array"
+    },
+    "questionnaire_id": {
+      "title": "Questionnaire Id",
+      "type": "string"
+    },
+    "session_id": {
+      "title": "Session Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "session_id",
+    "questionnaire_id",
+    "answers"
+  ],
+  "title": "QuestionnaireAnswerPayload",
+  "type": "object"
+}

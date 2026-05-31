@@ -1,0 +1,164 @@
+{
+  "$defs": {
+    "GenerationImage": {
+      "additionalProperties": false,
+      "properties": {
+        "created_at": {
+          "title": "Created At",
+          "type": "string"
+        },
+        "filename": {
+          "title": "Filename",
+          "type": "string"
+        },
+        "height": {
+          "title": "Height",
+          "type": "integer"
+        },
+        "image_id": {
+          "title": "Image Id",
+          "type": "string"
+        },
+        "provider": {
+          "title": "Provider",
+          "type": "string"
+        },
+        "role": {
+          "title": "Role",
+          "type": "string"
+        },
+        "seed": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seed"
+        },
+        "session_id": {
+          "title": "Session Id",
+          "type": "string"
+        },
+        "thumbnail_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Thumbnail Url"
+        },
+        "url": {
+          "title": "Url",
+          "type": "string"
+        },
+        "width": {
+          "title": "Width",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "image_id",
+        "session_id",
+        "role",
+        "url",
+        "filename",
+        "width",
+        "height",
+        "provider",
+        "created_at"
+      ],
+      "title": "GenerationImage",
+      "type": "object"
+    },
+    "StructuredError": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        },
+        "suggestion": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Suggestion"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "title": "StructuredError",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "error": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/StructuredError"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "images": {
+      "items": {
+        "$ref": "#/$defs/GenerationImage"
+      },
+      "title": "Images",
+      "type": "array"
+    },
+    "job_id": {
+      "title": "Job Id",
+      "type": "string"
+    },
+    "provider": {
+      "title": "Provider",
+      "type": "string"
+    },
+    "session_id": {
+      "title": "Session Id",
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "succeeded",
+        "failed",
+        "cancelled"
+      ],
+      "title": "Status",
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "session_id",
+    "job_id",
+    "provider",
+    "images"
+  ],
+  "title": "GenerationResult",
+  "type": "object"
+}

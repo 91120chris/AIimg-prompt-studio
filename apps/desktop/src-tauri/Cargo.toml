@@ -1,0 +1,16 @@
+[package]
+name = "prompt-optimizer-studio"
+version = "0.1.0"
+description = "Local-first prompt optimization studio shell."
+authors = ["Prompt Optimizer Studio"]
+edition = "2021"
+
+[lib]
+name = "prompt_optimizer_studio_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }

@@ -1,0 +1,29 @@
+.env
+.venv
+storage/
+local_models/
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+services/backend/.venv/
+
+# Node / frontend
+node_modules/
+apps/desktop/node_modules/
+apps/desktop/dist/
+apps/desktop/.vite/
+
+# Tauri / Rust
+apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/Cargo.lock
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

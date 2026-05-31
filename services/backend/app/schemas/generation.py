@@ -28,6 +28,12 @@ class GenerationCancelRequest(StrictBaseModel):
     job_id: str
 
 
+class CodexImageResponse(StrictBaseModel):
+    status: Literal["succeeded", "failed"]
+    image_files: list[str]
+    error: StructuredError | None = None
+
+
 class GenerationImage(StrictBaseModel):
     image_id: str
     session_id: str

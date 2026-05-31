@@ -13,6 +13,7 @@ from app.schemas.errors import StructuredError
 from app.schemas.files import GeneratedImageResponse, ReferenceImageResponse
 from app.schemas.generation import GenerationImage, GenerationResult
 from app.schemas.generation import (
+    CodexImageResponse,
     GenerationCancelRequest,
     GenerationConfirmRequest,
     GenerationJobResponse,
@@ -52,6 +53,7 @@ __all__ = [
     "BooleanQuestionnaireAnswer",
     "ChoiceQuestion",
     "ChoiceQuestionnaireAnswer",
+    "CodexImageResponse",
     "CodexModelsResponse",
     "CodexStatusResponse",
     "ErrorTurnResponse",

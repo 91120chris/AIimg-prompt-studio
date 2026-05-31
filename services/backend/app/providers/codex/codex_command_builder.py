@@ -9,6 +9,7 @@ def build_codex_exec_command(
     *,
     model: str | None = None,
     sandbox: str | None = None,
+    skip_git_repo_check: bool = False,
     output_schema_path: str | Path | None = None,
 ) -> list[str]:
     command = [
@@ -21,6 +22,8 @@ def build_codex_exec_command(
     if sandbox:
         command.extend(["--sandbox", sandbox])
     command.append("exec")
+    if skip_git_repo_check:
+        command.append("--skip-git-repo-check")
     if output_schema_path is not None:
         command.extend(["--output-schema", str(output_schema_path)])
     command.append(prompt)
@@ -33,6 +36,7 @@ def build_codex_image_exec_command(
     *,
     model: str | None = None,
     sandbox: str | None = None,
+    skip_git_repo_check: bool = False,
     output_schema_path: str | Path | None = None,
     reference_image_paths: list[str | Path] | None = None,
 ) -> list[str]:
@@ -41,6 +45,7 @@ def build_codex_image_exec_command(
         prompt,
         model=model,
         sandbox=sandbox,
+        skip_git_repo_check=skip_git_repo_check,
         output_schema_path=output_schema_path,
     )
     prompt_arg = command.pop()

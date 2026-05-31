@@ -7,10 +7,12 @@ from app.core.file_store import generated_image_response
 from app.core.session_workspace import new_id
 from app.db.models import GeneratedImageRecord, GenerationJobRecord, ReferenceImageRecord, SessionRecord
 from app.db.session import new_session
+from app.providers.codex.codex_image_provider import CodexImageProvider, CodexImageProviderError
 from app.schemas.errors import StructuredError
 from app.schemas.generation import (
     GenerationCancelRequest,
     GenerationConfirmRequest,
+    GenerationImage,
     GenerationJobResponse,
 )
 
@@ -43,13 +45,16 @@ def _job_response(db, record: GenerationJobRecord) -> GenerationJobResponse:
         provider=record.provider,
         mode=record.mode,
         status=record.status,
-        images=[generated_image_response(image) for image in image_records],
+        images=[
+            GenerationImage.model_validate(generated_image_response(image).model_dump())
+            for image in image_records
+        ],
         error=_error_from_json(record.error_json),
         created_at=record.created_at,
     )
 
 
-def _validate_references(db, session_id: str, reference_image_ids: list[str]) -> None:
+def _validate_references(db, session_id: str, reference_image_ids: list[str]) -> list[ReferenceImageRecord]:
     if len(reference_image_ids) > 2:
         raise _structured_http_error(
             422,
@@ -61,7 +66,7 @@ def _validate_references(db, session_id: str, reference_image_ids: list[str]) ->
         )
 
     if not reference_image_ids:
-        return
+        return []
 
     records = db.exec(
         select(ReferenceImageRecord).where(
@@ -80,6 +85,7 @@ def _validate_references(db, session_id: str, reference_image_ids: list[str]) ->
                 suggestion="請重新上傳參考圖片後再試一次。",
             ),
         )
+    return records
 
 
 @router.post("/confirm", response_model=GenerationJobResponse)
@@ -114,16 +120,31 @@ def confirm_generation(payload: GenerationConfirmRequest, request: Request) -> G
                     suggestion="請先建立工作階段。",
                 ),
             )
-        _validate_references(db, payload.session_id, payload.reference_image_ids)
+        reference_records = _validate_references(db, payload.session_id, payload.reference_image_ids)
 
         job = GenerationJobRecord(
             job_id=new_id("job"),
             session_id=payload.session_id,
             provider=payload.provider,
             mode=payload.mode,
-            status="queued",
+            status="running",
             parameters_json=payload.model_dump_json(),
         )
+        db.add(job)
+        db.commit()
+        db.refresh(job)
+        try:
+            CodexImageProvider(request.app.state.settings).generate(
+                db,
+                job=job,
+                payload=payload,
+                reference_images=reference_records,
+            )
+            job.status = "succeeded"
+            job.error_json = None
+        except CodexImageProviderError as error:
+            job.status = "failed"
+            job.error_json = error.error.model_dump_json()
         db.add(job)
         db.commit()
         db.refresh(job)

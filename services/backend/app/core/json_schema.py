@@ -5,7 +5,7 @@ from typing import TypeAlias
 from pydantic import TypeAdapter
 
 from app.schemas.agent import AgentTurnResponse
-from app.schemas.generation import GenerationResult
+from app.schemas.generation import CodexImageResponse
 from app.schemas.questionnaire_answers import QuestionnaireAnswerPayload
 
 SchemaName: TypeAlias = str
@@ -14,7 +14,7 @@ SchemaName: TypeAlias = str
 SCHEMA_ADAPTERS: dict[SchemaName, TypeAdapter[object]] = {
     "agent_turn_response.schema.json": TypeAdapter(AgentTurnResponse),
     "questionnaire_answer_payload.schema.json": TypeAdapter(QuestionnaireAnswerPayload),
-    "codex_image_response.schema.json": TypeAdapter(GenerationResult),
+    "codex_image_response.schema.json": TypeAdapter(CodexImageResponse),
 }
 
 
@@ -147,6 +147,7 @@ def codex_agent_turn_response_schema() -> dict[str, object]:
 
 def require_all_declared_properties(schema: object) -> None:
     if isinstance(schema, dict):
+        schema.pop("default", None)
         properties = schema.get("properties")
         if isinstance(properties, dict) and properties:
             schema["required"] = sorted(properties)

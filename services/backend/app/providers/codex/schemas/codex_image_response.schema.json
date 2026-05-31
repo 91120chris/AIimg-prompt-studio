@@ -1,85 +1,5 @@
 {
   "$defs": {
-    "GenerationImage": {
-      "additionalProperties": false,
-      "properties": {
-        "created_at": {
-          "title": "Created At",
-          "type": "string"
-        },
-        "filename": {
-          "title": "Filename",
-          "type": "string"
-        },
-        "height": {
-          "title": "Height",
-          "type": "integer"
-        },
-        "image_id": {
-          "title": "Image Id",
-          "type": "string"
-        },
-        "provider": {
-          "title": "Provider",
-          "type": "string"
-        },
-        "role": {
-          "title": "Role",
-          "type": "string"
-        },
-        "seed": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Seed"
-        },
-        "session_id": {
-          "title": "Session Id",
-          "type": "string"
-        },
-        "thumbnail_url": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Thumbnail Url"
-        },
-        "url": {
-          "title": "Url",
-          "type": "string"
-        },
-        "width": {
-          "title": "Width",
-          "type": "integer"
-        }
-      },
-      "required": [
-        "created_at",
-        "filename",
-        "height",
-        "image_id",
-        "provider",
-        "role",
-        "seed",
-        "session_id",
-        "thumbnail_url",
-        "url",
-        "width"
-      ],
-      "title": "GenerationImage",
-      "type": "object"
-    },
     "StructuredError": {
       "additionalProperties": false,
       "properties": {
@@ -100,7 +20,6 @@
               "type": "null"
             }
           ],
-          "default": null,
           "title": "Suggestion"
         }
       },
@@ -123,33 +42,19 @@
         {
           "type": "null"
         }
-      ],
-      "default": null
+      ]
     },
-    "images": {
+    "image_files": {
       "items": {
-        "$ref": "#/$defs/GenerationImage"
+        "type": "string"
       },
-      "title": "Images",
+      "title": "Image Files",
       "type": "array"
-    },
-    "job_id": {
-      "title": "Job Id",
-      "type": "string"
-    },
-    "provider": {
-      "title": "Provider",
-      "type": "string"
-    },
-    "session_id": {
-      "title": "Session Id",
-      "type": "string"
     },
     "status": {
       "enum": [
         "succeeded",
-        "failed",
-        "cancelled"
+        "failed"
       ],
       "title": "Status",
       "type": "string"
@@ -157,12 +62,9 @@
   },
   "required": [
     "error",
-    "images",
-    "job_id",
-    "provider",
-    "session_id",
+    "image_files",
     "status"
   ],
-  "title": "GenerationResult",
+  "title": "CodexImageResponse",
   "type": "object"
 }

@@ -1,6 +1,8 @@
 from fastapi.testclient import TestClient
+from PIL import Image
 from sqlmodel import select
 
+from app.core.image_records import register_generated_image
 from app.db.models import GeneratedImageRecord, GenerationJobRecord
 from app.db.session import new_session
 from app.main import create_app
@@ -29,7 +31,32 @@ def generation_payload(session_id: str, optimized_prompt: str = "cinematic city"
     }
 
 
-def test_confirm_generation_creates_queued_job_without_auto_image(tmp_path) -> None:
+def fake_success_provider(tmp_path):
+    class FakeCodexImageProvider:
+        def __init__(self, settings):
+            self.settings = settings
+
+        def generate(self, db, *, job, payload, reference_images):
+            source_path = tmp_path / "fake-output.png"
+            Image.new("RGB", (32, 24), color="purple").save(source_path)
+            return [
+                register_generated_image(
+                    db,
+                    self.settings,
+                    session_id=payload.session_id,
+                    source_path=source_path,
+                    provider=payload.provider,
+                    seed=payload.parameters.seed,
+                )
+            ]
+
+    return FakeCodexImageProvider
+
+
+def test_confirm_generation_runs_provider_and_returns_safe_image(monkeypatch, tmp_path) -> None:
+    from app.api import generation
+
+    monkeypatch.setattr(generation, "CodexImageProvider", fake_success_provider(tmp_path))
     app, client = make_test_app(tmp_path)
     session_id = client.post("/sessions", json={"title": "Generation"}).json()["session_id"]
 
@@ -39,8 +66,8 @@ def test_confirm_generation_creates_queued_job_without_auto_image(tmp_path) -> N
     payload = response.json()
     assert payload["job_id"].startswith("job_")
     assert payload["session_id"] == session_id
-    assert payload["status"] == "queued"
-    assert payload["images"] == []
+    assert payload["status"] == "succeeded"
+    assert payload["images"][0]["url"].startswith(f"/files/sessions/{session_id}/generated-images/img_")
     assert "storage_path" not in response.text
 
     with new_session(app.state.engine) as db:
@@ -48,7 +75,7 @@ def test_confirm_generation_creates_queued_job_without_auto_image(tmp_path) -> N
         images = db.exec(select(GeneratedImageRecord)).all()
 
     assert len(jobs) == 1
-    assert images == []
+    assert len(images) == 1
     assert "cinematic city" in jobs[0].parameters_json
 
 
@@ -63,9 +90,19 @@ def test_confirm_generation_requires_optimized_prompt(tmp_path) -> None:
 
 
 def test_cancel_generation_marks_queued_job_cancelled(tmp_path) -> None:
-    _, client = make_test_app(tmp_path)
+    app, client = make_test_app(tmp_path)
     session_id = client.post("/sessions", json={"title": "Generation"}).json()["session_id"]
-    job_id = client.post("/generation/confirm", json=generation_payload(session_id)).json()["job_id"]
+    with new_session(app.state.engine) as db:
+        job = GenerationJobRecord(
+            job_id="job_cancel",
+            session_id=session_id,
+            provider="codex_cli_gpt_image",
+            mode="t2i",
+            status="queued",
+        )
+        db.add(job)
+        db.commit()
+    job_id = "job_cancel"
 
     response = client.post("/generation/cancel", json={"job_id": job_id})
 
@@ -74,11 +111,51 @@ def test_cancel_generation_marks_queued_job_cancelled(tmp_path) -> None:
 
 
 def test_get_generation_job_returns_status(tmp_path) -> None:
-    _, client = make_test_app(tmp_path)
+    app, client = make_test_app(tmp_path)
     session_id = client.post("/sessions", json={"title": "Generation"}).json()["session_id"]
-    job_id = client.post("/generation/confirm", json=generation_payload(session_id)).json()["job_id"]
+    with new_session(app.state.engine) as db:
+        job = GenerationJobRecord(
+            job_id="job_status",
+            session_id=session_id,
+            provider="codex_cli_gpt_image",
+            mode="t2i",
+            status="queued",
+        )
+        db.add(job)
+        db.commit()
+    job_id = "job_status"
 
     response = client.get(f"/generation/{job_id}")
 
     assert response.status_code == 200
     assert response.json()["job_id"] == job_id
+
+
+def test_confirm_generation_records_provider_failure(monkeypatch, tmp_path) -> None:
+    from app.api import generation
+    from app.providers.codex.codex_image_provider import CodexImageProviderError
+    from app.schemas.errors import StructuredError
+
+    class FailingCodexImageProvider:
+        def __init__(self, settings):
+            self.settings = settings
+
+        def generate(self, db, *, job, payload, reference_images):
+            raise CodexImageProviderError(
+                StructuredError(
+                    code="codex_image_failed",
+                    message="fake failure",
+                    suggestion="fake suggestion",
+                )
+            )
+
+    monkeypatch.setattr(generation, "CodexImageProvider", FailingCodexImageProvider)
+    _, client = make_test_app(tmp_path)
+    session_id = client.post("/sessions", json={"title": "Generation"}).json()["session_id"]
+
+    response = client.post("/generation/confirm", json=generation_payload(session_id))
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "failed"
+    assert payload["error"]["code"] == "codex_image_failed"

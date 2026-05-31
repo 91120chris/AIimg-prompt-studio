@@ -40,3 +40,16 @@ def test_codex_image_command_uses_separate_image_args() -> None:
     assert "ref_1.png" in command
     assert "ref_2.png" in command
     assert command[-1] == "Generate from the attached references."
+
+
+def test_codex_exec_command_can_skip_git_check_for_scratch_workspace() -> None:
+    command = build_codex_exec_command(
+        fake_binary(),
+        "-",
+        sandbox="workspace-write",
+        skip_git_repo_check=True,
+    )
+
+    exec_index = command.index("exec")
+    assert command[exec_index + 1] == "--skip-git-repo-check"
+    assert command[-1] == "-"

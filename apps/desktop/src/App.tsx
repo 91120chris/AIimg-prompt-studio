@@ -497,7 +497,7 @@ function App() {
     }
 
     setGenerationBusy(true);
-    setGenerationMessage("正在建立生成工作...");
+    setGenerationMessage("正在確認並生成圖片...");
     setErrorMessage(null);
     try {
       const session = await ensureSession();
@@ -524,7 +524,10 @@ function App() {
       }
       const job = generationJobResponseSchema.parse(await response.json());
       setGenerationJob(job);
-      setGenerationMessage(`生成工作已建立：${job.status}`);
+      setGenerationMessage(`生成工作狀態：${job.status}`);
+      if (job.error) {
+        setErrorMessage(job.error.suggestion ? `${job.error.message} ${job.error.suggestion}` : job.error.message);
+      }
     } catch (error) {
       setGenerationMessage("建立生成工作失敗");
       setErrorMessage(error instanceof Error ? error.message : "無法建立生成工作");
@@ -628,6 +631,8 @@ function App() {
     }
     return "後端未連線";
   }, [backendStatus]);
+
+  const generatedPreviewImage = generationJob?.images[0] ?? null;
 
   function setAnswerDraft(questionId: string, value: AnswerDraftValue) {
     setAnswerDrafts((current) => ({ ...current, [questionId]: value }));
@@ -1093,7 +1098,7 @@ function App() {
                   void confirmGeneration();
                 }}
               >
-                {generationBusy ? "建立中" : "確認生成"}
+                {generationBusy ? "生成中" : "確認生成"}
               </button>
               {generationJob && generationJob.status === "queued" ? (
                 <button
@@ -1116,15 +1121,33 @@ function App() {
             <p>輸出圖片會透過後端安全 URL 顯示。</p>
           </div>
           <div className="image-stage">
-            <div className="image-placeholder">
-              <span />
-              <strong>{generationJob ? `生成工作：${generationJob.status}` : "尚未生成圖片"}</strong>
-              <p>
-                {generationJob
-                  ? "1C 已建立確認生成的安全工作骨架，實際 Codex 圖片輸出會接在下一步。"
-                  : "完成問卷並確認生成後，結果會出現在這裡。"}
-              </p>
-            </div>
+            {generatedPreviewImage ? (
+              <div className="generated-image-card">
+                <img
+                  src={`${backendBaseUrl}${
+                    generatedPreviewImage.thumbnail_url ?? generatedPreviewImage.url
+                  }`}
+                  alt="生成圖片"
+                />
+                <div>
+                  <strong>{generatedPreviewImage.filename}</strong>
+                  <p>
+                    {generatedPreviewImage.width} x {generatedPreviewImage.height} /{" "}
+                    {generationJob?.status}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="image-placeholder">
+                <span />
+                <strong>{generationJob ? `生成工作：${generationJob.status}` : "尚未生成圖片"}</strong>
+                <p>
+                  {generationJob
+                    ? "生成工作已建立；圖片完成後會透過安全 URL 顯示在這裡。"
+                    : "完成問卷並確認生成後，結果會出現在這裡。"}
+                </p>
+              </div>
+            )}
           </div>
         </aside>
       </section>

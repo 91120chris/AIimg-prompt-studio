@@ -40,6 +40,7 @@ type ImageProvider = "codex_cli_gpt_image" | "diffusers_flux2";
 type WorkflowMode = "t2i" | "i2i";
 type AnswerDraftValue = string | boolean | number | string[];
 type AnswerDrafts = Record<string, AnswerDraftValue>;
+type FeedbackQuestionnaireContext = { questionnaireId: string; jobId: string };
 type QuestionnaireAnswerRequest =
   | { kind: "text"; question_id: string; value: string }
   | { kind: "choice"; question_id: string; value: string }
@@ -202,6 +203,8 @@ function App() {
   const [generationJob, setGenerationJob] = useState<GenerationJobResponse | null>(null);
   const [generationBusy, setGenerationBusy] = useState(false);
   const [generationMessage, setGenerationMessage] = useState<string | null>(null);
+  const [feedbackQuestionnaireContext, setFeedbackQuestionnaireContext] =
+    useState<FeedbackQuestionnaireContext | null>(null);
 
   useEffect(() => {
     setCodexOptionsDraft(codexModels.model_options.join(", "));
@@ -409,6 +412,7 @@ function App() {
     if (turn.kind === "optimized_prompt") {
       setOptimizedPrompt(turn.optimized_prompt);
       setAgentMessage(turn.message);
+      setFeedbackQuestionnaireContext(null);
       return;
     }
     if (turn.kind === "error") {
@@ -429,6 +433,7 @@ function App() {
     setAgentBusy(true);
     setAgentMessage("Codex 正在分析 prompt...");
     setErrorMessage(null);
+    setFeedbackQuestionnaireContext(null);
     try {
       const session = await ensureSession();
       const response = await fetch(`${backendBaseUrl}/agent/turn`, {
@@ -461,27 +466,38 @@ function App() {
       return;
     }
 
+    const isFeedbackQuestionnaire =
+      feedbackQuestionnaireContext?.questionnaireId === questionnaire.questionnaire_id;
     setAgentBusy(true);
-    setAgentMessage("Codex 正在整理答案並最佳化 prompt...");
+    setAgentMessage(
+      isFeedbackQuestionnaire
+        ? "Codex 正在根據回饋修正 prompt..."
+        : "Codex 正在整理答案並最佳化 prompt...",
+    );
     setErrorMessage(null);
     try {
       const answers = questionnaireAnswers(questionnaire, answerDrafts);
-      const response = await fetch(`${backendBaseUrl}/agent/answer-questionnaire`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          session_id: currentSession.session_id,
-          questionnaire_id: questionnaire.questionnaire_id,
-          provider: agentProvider,
-          codex_model: codexModels.default_model,
-          ollama_model: ollamaModels.selected_model,
-          answers,
-        }),
-      });
+      const response = await fetch(
+        `${backendBaseUrl}${isFeedbackQuestionnaire ? "/agent/refine" : "/agent/answer-questionnaire"}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            session_id: currentSession.session_id,
+            questionnaire_id: questionnaire.questionnaire_id,
+            ...(isFeedbackQuestionnaire ? { job_id: feedbackQuestionnaireContext.jobId } : {}),
+            provider: agentProvider,
+            codex_model: codexModels.default_model,
+            ollama_model: ollamaModels.selected_model,
+            answers,
+          }),
+        },
+      );
       if (!response.ok) {
         throw new Error(await readErrorMessage(response));
       }
-      applyAgentTurn(agentTurnResponseSchema.parse(await response.json()));
+      const turn = agentTurnResponseSchema.parse(await response.json());
+      applyAgentTurn(turn);
     } catch (error) {
       setAgentMessage("問卷送出失敗");
       setErrorMessage(error instanceof Error ? error.message : "無法送出問卷答案");
@@ -513,7 +529,16 @@ function App() {
       if (!response.ok) {
         throw new Error(await readErrorMessage(response));
       }
-      applyAgentTurn(agentTurnResponseSchema.parse(await response.json()));
+      const turn = agentTurnResponseSchema.parse(await response.json());
+      applyAgentTurn(turn);
+      if (turn.kind === "questionnaire") {
+        setFeedbackQuestionnaireContext({
+          questionnaireId: turn.questionnaire.questionnaire_id,
+          jobId: job.job_id,
+        });
+      } else {
+        setFeedbackQuestionnaireContext(null);
+      }
     } catch (error) {
       setAgentMessage("回饋問卷建立失敗");
       setErrorMessage(error instanceof Error ? error.message : "無法建立生成後回饋問卷");
@@ -959,7 +984,10 @@ function App() {
                     void submitQuestionnaire(agentTurn.questionnaire);
                   }}
                 >
-                  送出問卷並最佳化
+                  {feedbackQuestionnaireContext?.questionnaireId ===
+                  agentTurn.questionnaire.questionnaire_id
+                    ? "送出回饋並修正 Prompt"
+                    : "送出問卷並最佳化"}
                 </button>
               </section>
             ) : null}

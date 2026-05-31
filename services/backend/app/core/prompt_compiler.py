@@ -101,6 +101,51 @@ def build_feedback_questionnaire_prompt(
 """
 
 
+def build_feedback_refinement_prompt(
+    *,
+    original_prompt: str,
+    previous_optimized_prompt: str,
+    questionnaire: Questionnaire,
+    answers: QuestionnaireAnswerPayload,
+    generation_job: dict[str, object],
+    generated_images: list[dict[str, object]],
+) -> str:
+    return f"""你是 Prompt Optimizer Studio 的本機 prompt agent。
+
+任務：根據使用者對上一輪生成圖片的回饋，產生下一版最佳化 prompt。
+
+硬性規則：
+- 只回傳符合 output schema 的 JSON，不要加 Markdown。
+- output schema 會要求所有欄位都出現；不適用的欄位請填 null，warnings 請填陣列。
+- 這是回饋修正回合，kind 必須是 "optimized_prompt"。
+- 不要產生圖片，也不要說你已經產生圖片。
+- 不要修改技能、模板或模型 registry。
+- 不要要求 OpenAI API key。
+- 不要要求使用者貼本機檔案路徑。
+- 不要覆寫上一版 prompt；請輸出一個可直接用於下一輪生成的新 prompt。
+- 保留使用者明確滿意的元素，修正使用者指出的問題，並避免放大未提到的風格偏差。
+- optimized_prompt 應完整、具體、可供 image provider 直接使用。
+
+原始 prompt：
+{original_prompt}
+
+上一版最佳化 prompt：
+{previous_optimized_prompt}
+
+生成工作 safe metadata：
+{_json_dump(generation_job)}
+
+生成圖片 safe metadata：
+{_json_dump(generated_images)}
+
+回饋問卷：
+{_json_dump(questionnaire.model_dump())}
+
+使用者回饋答案：
+{_json_dump(answers.model_dump())}
+"""
+
+
 def build_repair_prompt(raw_output: str, validation_error: str) -> str:
     return f"""上一個回覆沒有通過 Prompt Optimizer Studio 的 strict JSON schema 驗證。
 

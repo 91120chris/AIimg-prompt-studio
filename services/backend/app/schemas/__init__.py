@@ -1,6 +1,7 @@
 from app.schemas.agent import (
     AgentFeedbackQuestionnaireRequest,
     AgentQuestionnaireSubmitRequest,
+    AgentRefineRequest,
     AgentTurnRequest,
     AgentTurnResponse,
     ErrorTurnResponse,
@@ -50,6 +51,7 @@ __all__ = [
     "AgentQuestionnaireSubmitRequest",
     "AgentFeedbackQuestionnaireRequest",
     "AgentTurnRequest",
+    "AgentRefineRequest",
     "AgentTurnResponse",
     "BooleanQuestion",
     "BooleanQuestionnaireAnswer",

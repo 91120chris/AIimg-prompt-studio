@@ -61,6 +61,13 @@ class AgentFeedbackQuestionnaireRequest(StrictBaseModel):
     ollama_model: str | None = None
 
 
+class AgentRefineRequest(QuestionnaireAnswerPayload):
+    job_id: str
+    provider: AgentProvider = "codex_cli"
+    codex_model: str | None = None
+    ollama_model: str | None = None
+
+
 AgentTurnResponse = Annotated[
     MessageTurnResponse
     | QuestionnaireTurnResponse

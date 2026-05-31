@@ -6,6 +6,7 @@ from sqlmodel import select
 
 from app.core.file_store import generated_image_response
 from app.core.prompt_compiler import (
+    build_feedback_refinement_prompt,
     build_feedback_questionnaire_prompt,
     build_optimization_prompt,
     build_questionnaire_prompt,
@@ -30,6 +31,7 @@ from app.providers.codex.codex_agent_provider import CodexAgentRunner
 from app.schemas.agent import (
     AgentFeedbackQuestionnaireRequest,
     AgentQuestionnaireSubmitRequest,
+    AgentRefineRequest,
     AgentTurnRequest,
     AgentTurnResponse,
     OptimizedPromptTurnResponse,
@@ -140,6 +142,62 @@ def _get_latest_optimized_prompt_text(db, session_id: str) -> str:
             ),
         )
     return prompt_version.prompt_text
+
+
+def _get_succeeded_generation_job(db, session_id: str, job_id: str) -> GenerationJobRecord:
+    job = db.get(GenerationJobRecord, job_id)
+    if job is None or job.session_id != session_id:
+        raise _structured_http_error(
+            404,
+            StructuredError(
+                code="generation_job_not_found",
+                message="找不到生成工作。",
+                suggestion="請確認生成工作是否仍存在。",
+            ),
+        )
+    if job.status != "succeeded":
+        raise _structured_http_error(
+            422,
+            StructuredError(
+                code="generation_not_succeeded",
+                message="只有成功生成圖片後才能建立回饋問卷或修正 prompt。",
+                suggestion="請先完成生成，或檢查生成錯誤。",
+            ),
+        )
+    return job
+
+
+def _get_generated_images(db, session_id: str) -> list[GeneratedImageRecord]:
+    images = db.exec(
+        select(GeneratedImageRecord)
+        .where(GeneratedImageRecord.session_id == session_id)
+        .order_by(GeneratedImageRecord.created_at)
+    ).all()
+    if not images:
+        raise _structured_http_error(
+            422,
+            StructuredError(
+                code="generated_image_not_found",
+                message="找不到可回饋的生成圖片。",
+                suggestion="請重新生成圖片後再建立回饋問卷。",
+            ),
+        )
+    return images
+
+
+def _generation_job_payload(job: GenerationJobRecord) -> dict[str, object]:
+    return {
+        "job_id": job.job_id,
+        "session_id": job.session_id,
+        "provider": job.provider,
+        "mode": job.mode,
+        "status": job.status,
+        "created_at": job.created_at,
+    }
+
+
+def _generated_image_payloads(images: list[GeneratedImageRecord]) -> list[dict[str, object]]:
+    return [generated_image_response(image).model_dump() for image in images]
 
 
 def _get_questionnaire(db, session_id: str, questionnaire_id: str) -> Questionnaire:
@@ -256,40 +314,8 @@ def create_feedback_questionnaire(
                 ),
             )
 
-        job = db.get(GenerationJobRecord, payload.job_id)
-        if job is None or job.session_id != payload.session_id:
-            raise _structured_http_error(
-                404,
-                StructuredError(
-                    code="generation_job_not_found",
-                    message="找不到生成工作。",
-                    suggestion="請確認生成工作是否仍存在。",
-                ),
-            )
-        if job.status != "succeeded":
-            raise _structured_http_error(
-                422,
-                StructuredError(
-                    code="generation_not_succeeded",
-                    message="只有成功生成圖片後才能建立回饋問卷。",
-                    suggestion="請先完成生成，或檢查生成錯誤。",
-                ),
-            )
-
-        images = db.exec(
-            select(GeneratedImageRecord)
-            .where(GeneratedImageRecord.session_id == payload.session_id)
-            .order_by(GeneratedImageRecord.created_at)
-        ).all()
-        if not images:
-            raise _structured_http_error(
-                422,
-                StructuredError(
-                    code="generated_image_not_found",
-                    message="找不到可回饋的生成圖片。",
-                    suggestion="請重新生成圖片後再建立回饋問卷。",
-                ),
-            )
+        job = _get_succeeded_generation_job(db, payload.session_id, payload.job_id)
+        images = _get_generated_images(db, payload.session_id)
 
         original_prompt = _get_latest_prompt_text(db, payload.session_id)
         optimized_prompt = _get_latest_optimized_prompt_text(db, payload.session_id)
@@ -297,18 +323,64 @@ def create_feedback_questionnaire(
             build_feedback_questionnaire_prompt(
                 original_prompt=original_prompt,
                 optimized_prompt=optimized_prompt,
-                generation_job={
-                    "job_id": job.job_id,
-                    "session_id": job.session_id,
-                    "provider": job.provider,
-                    "mode": job.mode,
-                    "status": job.status,
-                    "created_at": job.created_at,
-                },
-                generated_images=[
-                    generated_image_response(image).model_dump()
-                    for image in images
-                ],
+                generation_job=_generation_job_payload(job),
+                generated_images=_generated_image_payloads(images),
+            ),
+            model=payload.codex_model,
+        )
+        response = _ensure_unique_questionnaire_id(db, response)
+        _store_agent_turn(db, payload.session_id, response)
+        db.commit()
+        return response
+
+
+@router.post("/refine", response_model=AgentTurnResponse)
+def refine_prompt_from_feedback(
+    payload: AgentRefineRequest,
+    request: Request,
+) -> AgentTurnResponse:
+    _ensure_codex_provider(payload.provider)
+    settings = request.app.state.settings
+    runner = CodexAgentRunner(settings)
+
+    with new_session(_engine(request)) as db:
+        if db.get(SessionRecord, payload.session_id) is None:
+            raise _structured_http_error(
+                404,
+                StructuredError(
+                    code="session_not_found",
+                    message="找不到工作階段。",
+                    suggestion="請先建立工作階段。",
+                ),
+            )
+
+        job = _get_succeeded_generation_job(db, payload.session_id, payload.job_id)
+        images = _get_generated_images(db, payload.session_id)
+        questionnaire = _get_questionnaire(db, payload.session_id, payload.questionnaire_id)
+        try:
+            validate_questionnaire_answers(questionnaire, payload)
+        except QuestionnaireValidationError as error:
+            raise _structured_http_error(422, error.error) from error
+
+        db.add(
+            QuestionnaireAnswerRecord(
+                questionnaire_answer_id=new_id("answer"),
+                session_id=payload.session_id,
+                questionnaire_id=payload.questionnaire_id,
+                payload_json=payload.model_dump_json(),
+            )
+        )
+
+        original_prompt = _get_latest_prompt_text(db, payload.session_id)
+        previous_optimized_prompt = _get_latest_optimized_prompt_text(db, payload.session_id)
+        response = runner.run(
+            build_feedback_refinement_prompt(
+                original_prompt=original_prompt,
+                previous_optimized_prompt=previous_optimized_prompt,
+                questionnaire=questionnaire,
+                answers=payload,
+                generation_job=_generation_job_payload(job),
+                generated_images=_generated_image_payloads(images),
             ),
             model=payload.codex_model,
         )

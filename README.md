@@ -2,7 +2,7 @@
 
 Local-first T2I / I2I prompt optimization desktop app.
 
-Current implementation covers the runnable Tauri + React shell, FastAPI backend, provider status, SQLite session storage, safe file URLs, reference image thumbnails, the first Codex questionnaire loop, and the Codex CLI image-generation path after explicit user confirmation.
+Current implementation covers the runnable Tauri + React shell, FastAPI backend, provider status, SQLite session storage, safe file URLs, reference image thumbnails, the Codex questionnaire loop, the Codex CLI image-generation path after explicit user confirmation, post-generation feedback questionnaires, and prompt refinement from feedback.
 
 ## Backend
 
@@ -83,7 +83,7 @@ $env:RUN_CODEX_SMOKE="1"; uv run pytest -m codex_smoke
 - Do not paste Hugging Face tokens into source files.
 - If a token was exposed, rotate it in Hugging Face settings.
 - This app does not require an OpenAI API key.
-- Codex CLI is the primary agent provider. Milestone 1B can ask Codex for a schema-validated questionnaire and then produce an optimized prompt from answers.
+- Codex CLI is the primary agent provider. The current loop can ask Codex for a schema-validated questionnaire, produce an optimized prompt, generate an image after explicit confirmation, ask for post-generation feedback, and refine the next prompt version from that feedback.
 - Ollama is the local fallback future provider. The desktop shell reads installed Ollama models live from `/api/tags` and lets you choose the current local model; the full Ollama agent loop is still pending.
 - Diffusers FLUX support comes after Milestone 1C / Phase 1.
 - `CORS_ALLOW_ORIGINS` is comma-separated and parsed with `NoDecode`.
@@ -113,5 +113,10 @@ $env:RUN_CODEX_SMOKE="1"; uv run pytest -m codex_smoke
 - `GET /sessions/{session_id}/generated-images`
 - `POST /agent/turn`
 - `POST /agent/answer-questionnaire`
+- `POST /agent/feedback-questionnaire`
+- `POST /agent/refine`
+- `POST /generation/confirm`
+- `POST /generation/cancel`
+- `GET /generation/{job_id}`
 - `GET /files/sessions/{session_id}/generated-images/{image_id}`
 - `GET /files/sessions/{session_id}/reference-images/{reference_image_id}`

@@ -3,6 +3,7 @@
 Local-first T2I / I2I prompt optimization desktop app.
 
 Current implementation covers the runnable Tauri + React shell, FastAPI backend, provider status, SQLite session storage, safe file URLs, reference image thumbnails, the Codex and Ollama questionnaire loops, the Codex CLI image-generation path after explicit user confirmation, post-generation feedback questionnaires, and prompt refinement from feedback.
+Safe runtime settings are persisted in SQLite through `app_settings`, so provider/model selections survive backend restarts.
 
 ## Backend
 

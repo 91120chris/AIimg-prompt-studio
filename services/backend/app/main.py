@@ -7,6 +7,7 @@ from app.api.providers import router as providers_router
 from app.api.security import router as security_router
 from app.api.sessions import router as sessions_router
 from app.api.settings import router as settings_router
+from app.core.app_settings_store import load_persisted_app_settings
 from app.cors import configure_cors
 from app.db.session import create_db_engine, init_db
 from app.schemas import HealthResponse
@@ -19,6 +20,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = app_settings
     app.state.engine = create_db_engine(app_settings)
     init_db(app.state.engine)
+    if settings is None or app_settings.load_persisted_settings:
+        load_persisted_app_settings(app.state.engine, app_settings)
     configure_cors(app, app_settings)
 
     @app.get("/health", response_model=HealthResponse)

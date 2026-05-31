@@ -47,6 +47,33 @@ export const secretStatusResponseSchema = z.object({
   hf_hub_cache_configured: z.boolean(),
 });
 
+export const safeSettingsResponseSchema = z.object({
+  app_name: z.string(),
+  app_version: z.string(),
+  app_env: z.string(),
+  backend_host: z.string(),
+  backend_port: z.number(),
+  selected_agent_provider: z.enum(["codex_cli", "ollama_local_llm"]),
+  selected_image_provider: z.enum(["codex_cli_gpt_image", "diffusers_flux2"]),
+  cors_allow_origins: z.array(z.string()),
+  codex_binary_path: z.string(),
+  codex_default_model: z.string(),
+  codex_model_options: z.array(z.string()),
+  codex_default_reasoning_effort: z.string(),
+  codex_reasoning_effort_options: z.array(z.string()),
+  codex_default_reasoning_summary: z.string(),
+  codex_default_verbosity: z.string().nullable(),
+  codex_timeout_seconds: z.number(),
+  run_codex_smoke: z.boolean(),
+  ollama_base_url: z.string(),
+  ollama_selected_model: z.string().nullable(),
+  ollama_timeout_seconds: z.number(),
+  ollama_agent_temperature: z.number(),
+  hf_home_configured: z.boolean(),
+  hf_hub_cache_configured: z.boolean(),
+  frontend_api_base_url: z.string(),
+});
+
 export const structuredErrorSchema = z.object({
   code: z.string(),
   message: z.string(),
@@ -193,6 +220,7 @@ export type CodexModelsResponse = z.infer<typeof codexModelsResponseSchema>;
 export type OllamaStatusResponse = z.infer<typeof ollamaStatusResponseSchema>;
 export type OllamaModelsResponse = z.infer<typeof ollamaModelsResponseSchema>;
 export type SecretStatusResponse = z.infer<typeof secretStatusResponseSchema>;
+export type SafeSettingsResponse = z.infer<typeof safeSettingsResponseSchema>;
 export type AgentTurnResponse = z.infer<typeof agentTurnResponseSchema>;
 export type GenerationJobResponse = z.infer<typeof generationJobResponseSchema>;
 export type Question = z.infer<typeof questionSchema>;

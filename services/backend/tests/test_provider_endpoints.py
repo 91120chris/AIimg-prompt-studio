@@ -67,6 +67,44 @@ def test_codex_runtime_options_patch_can_clear_verbosity() -> None:
     assert response.json()["default_verbosity"] is None
 
 
+def test_codex_runtime_options_patch_persists_across_app_restart(tmp_path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'app.sqlite3'}"
+    client = TestClient(
+        create_app(
+            Settings(
+                storage_root=str(tmp_path / "storage"),
+                database_url=database_url,
+                load_persisted_settings=True,
+                _env_file=None,
+            )
+        )
+    )
+
+    response = client.patch(
+        "/providers/codex/runtime-options",
+        json={"default_reasoning_effort": "xhigh", "default_reasoning_summary": "detailed"},
+    )
+
+    assert response.status_code == 200
+
+    restarted_client = TestClient(
+        create_app(
+            Settings(
+                storage_root=str(tmp_path / "storage"),
+                database_url=database_url,
+                load_persisted_settings=True,
+                _env_file=None,
+            )
+        )
+    )
+    persisted = restarted_client.get("/providers/codex/models")
+
+    assert persisted.status_code == 200
+    payload = persisted.json()
+    assert payload["default_reasoning_effort"] == "xhigh"
+    assert payload["default_reasoning_summary"] == "detailed"
+
+
 def test_secret_status_never_returns_secret_value() -> None:
     secret = "hf_secret_should_not_appear"
     client = TestClient(create_app(Settings(hf_token=secret, _env_file=None)))
@@ -107,3 +145,42 @@ def test_ollama_models_returns_live_selected_model(monkeypatch) -> None:
         "selected_model": "qwen2.5",
         "models": ["llama3.2", "qwen2.5"],
     }
+
+
+def test_ollama_default_model_patch_persists_across_app_restart(monkeypatch, tmp_path) -> None:
+    from app.api import providers
+
+    monkeypatch.setattr(providers, "get_ollama_models", lambda settings: ["llama3.2", "qwen2.5"])
+    database_url = f"sqlite:///{tmp_path / 'app.sqlite3'}"
+    client = TestClient(
+        create_app(
+            Settings(
+                storage_root=str(tmp_path / "storage"),
+                database_url=database_url,
+                load_persisted_settings=True,
+                _env_file=None,
+            )
+        )
+    )
+
+    response = client.patch(
+        "/providers/ollama/default-model",
+        json={"default_model": "qwen2.5"},
+    )
+
+    assert response.status_code == 200
+
+    restarted_client = TestClient(
+        create_app(
+            Settings(
+                storage_root=str(tmp_path / "storage"),
+                database_url=database_url,
+                load_persisted_settings=True,
+                _env_file=None,
+            )
+        )
+    )
+    persisted = restarted_client.get("/providers/ollama/models")
+
+    assert persisted.status_code == 200
+    assert persisted.json()["selected_model"] == "qwen2.5"

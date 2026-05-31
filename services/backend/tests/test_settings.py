@@ -60,6 +60,64 @@ def test_settings_safe_endpoint_does_not_include_hf_token() -> None:
     assert "hf_token" not in response.text
 
 
+def test_safe_settings_patch_persists_across_app_restart(tmp_path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'app.sqlite3'}"
+    settings = Settings(
+        storage_root=str(tmp_path / "storage"),
+        database_url=database_url,
+        _env_file=None,
+    )
+    client = TestClient(create_app(settings))
+
+    response = client.patch(
+        "/settings/safe",
+        json={
+            "selected_agent_provider": "ollama_local_llm",
+            "selected_image_provider": "diffusers_flux2",
+            "ollama_timeout_seconds": 123,
+            "ollama_agent_temperature": 0.4,
+        },
+    )
+
+    assert response.status_code == 200
+
+    restarted_client = TestClient(
+        create_app(
+            Settings(
+                storage_root=str(tmp_path / "storage"),
+                database_url=database_url,
+                load_persisted_settings=True,
+                _env_file=None,
+            )
+        )
+    )
+    persisted = restarted_client.get("/settings/safe")
+
+    assert persisted.status_code == 200
+    payload = persisted.json()
+    assert payload["selected_agent_provider"] == "ollama_local_llm"
+    assert payload["selected_image_provider"] == "diffusers_flux2"
+    assert payload["ollama_timeout_seconds"] == 123
+    assert payload["ollama_agent_temperature"] == 0.4
+
+
+def test_safe_settings_patch_rejects_empty_cors_origins(tmp_path) -> None:
+    client = TestClient(
+        create_app(
+            Settings(
+                storage_root=str(tmp_path / "storage"),
+                database_url=f"sqlite:///{tmp_path / 'app.sqlite3'}",
+                _env_file=None,
+            )
+        )
+    )
+
+    response = client.patch("/settings/safe", json={"cors_allow_origins": []})
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "empty_cors_allow_origins"
+
+
 def test_cors_preflight_uses_configured_origin() -> None:
     origin = "http://localhost:1420"
     client = TestClient(create_app(Settings(cors_allow_origins=origin, _env_file=None)))

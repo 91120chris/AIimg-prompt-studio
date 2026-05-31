@@ -17,6 +17,8 @@ DEFAULT_CODEX_MODEL_OPTIONS = ["auto", "gpt-5.5", "gpt-5.4"]
 DEFAULT_CODEX_REASONING_EFFORT_OPTIONS = ["low", "medium", "high", "xhigh"]
 DEFAULT_CODEX_REASONING_SUMMARY_OPTIONS = ["auto", "concise", "detailed", "none"]
 DEFAULT_CODEX_VERBOSITY_OPTIONS = ["low", "medium", "high"]
+DEFAULT_AGENT_PROVIDER_OPTIONS = {"codex_cli", "ollama_local_llm"}
+DEFAULT_IMAGE_PROVIDER_OPTIONS = {"codex_cli_gpt_image", "diffusers_flux2"}
 
 
 def parse_csv(value: str | list[str] | None) -> list[str]:
@@ -43,6 +45,9 @@ class Settings(BaseSettings):
     backend_port: int = 8000
     storage_root: str = "storage"
     database_url: str | None = None
+    load_persisted_settings: bool = False
+    selected_agent_provider: str = "codex_cli"
+    selected_image_provider: str = "codex_cli_gpt_image"
 
     cors_allow_origins: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: DEFAULT_CORS_ALLOW_ORIGINS.copy()
@@ -105,6 +110,22 @@ class Settings(BaseSettings):
         if value is not None and value not in DEFAULT_CODEX_VERBOSITY_OPTIONS:
             allowed = ", ".join(DEFAULT_CODEX_VERBOSITY_OPTIONS)
             raise ValueError(f"CODEX_DEFAULT_VERBOSITY must be one of: {allowed}")
+        return value
+
+    @field_validator("selected_agent_provider")
+    @classmethod
+    def validate_selected_agent_provider(cls, value: str) -> str:
+        if value not in DEFAULT_AGENT_PROVIDER_OPTIONS:
+            allowed = ", ".join(sorted(DEFAULT_AGENT_PROVIDER_OPTIONS))
+            raise ValueError(f"SELECTED_AGENT_PROVIDER must be one of: {allowed}")
+        return value
+
+    @field_validator("selected_image_provider")
+    @classmethod
+    def validate_selected_image_provider(cls, value: str) -> str:
+        if value not in DEFAULT_IMAGE_PROVIDER_OPTIONS:
+            allowed = ", ".join(sorted(DEFAULT_IMAGE_PROVIDER_OPTIONS))
+            raise ValueError(f"SELECTED_IMAGE_PROVIDER must be one of: {allowed}")
         return value
 
     @field_validator(

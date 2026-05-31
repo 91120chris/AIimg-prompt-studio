@@ -1,4 +1,6 @@
 from app.schemas.base import StrictBaseModel
+from app.schemas.agent import AgentProvider
+from app.schemas.generation import ImageProvider
 from app.settings import Settings
 
 
@@ -8,6 +10,8 @@ class SafeSettingsResponse(StrictBaseModel):
     app_env: str
     backend_host: str
     backend_port: int
+    selected_agent_provider: AgentProvider
+    selected_image_provider: ImageProvider
     cors_allow_origins: list[str]
     codex_binary_path: str
     codex_default_model: str
@@ -34,6 +38,8 @@ class SafeSettingsResponse(StrictBaseModel):
             app_env=settings.app_env,
             backend_host=settings.backend_host,
             backend_port=settings.backend_port,
+            selected_agent_provider=settings.selected_agent_provider,
+            selected_image_provider=settings.selected_image_provider,
             cors_allow_origins=settings.cors_allow_origins,
             codex_binary_path=settings.codex_binary_path,
             codex_default_model=settings.codex_default_model,
@@ -52,3 +58,13 @@ class SafeSettingsResponse(StrictBaseModel):
             hf_hub_cache_configured=settings.hf_hub_cache is not None,
             frontend_api_base_url=settings.frontend_api_base_url,
         )
+
+
+class SafeSettingsPatch(StrictBaseModel):
+    selected_agent_provider: AgentProvider | None = None
+    selected_image_provider: ImageProvider | None = None
+    cors_allow_origins: list[str] | None = None
+    frontend_api_base_url: str | None = None
+    ollama_base_url: str | None = None
+    ollama_timeout_seconds: int | None = None
+    ollama_agent_temperature: float | None = None

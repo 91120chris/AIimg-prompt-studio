@@ -20,6 +20,7 @@ import {
   type Question,
   type Questionnaire,
   type ReferenceImageResponse,
+  type SafeSettingsResponse,
   type SecretStatusResponse,
   type SessionResponse,
   agentTurnResponseSchema,
@@ -30,6 +31,7 @@ import {
   ollamaModelsResponseSchema,
   ollamaStatusResponseSchema,
   referenceImageResponseSchema,
+  safeSettingsResponseSchema,
   secretStatusResponseSchema,
   sessionResponseSchema,
   sessionsResponseSchema,
@@ -194,6 +196,8 @@ function App() {
   const historyTriggerRef = useRef<HTMLButtonElement | null>(null);
   const historyCloseRef = useRef<HTMLButtonElement | null>(null);
   const historyDrawerRef = useRef<HTMLElement | null>(null);
+  const managerTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const managerCloseRef = useRef<HTMLButtonElement | null>(null);
   const [workflowMode, setWorkflowMode] = useState<WorkflowMode>("t2i");
   const [agentProvider, setAgentProvider] = useState<AgentProvider>("codex_cli");
   const [imageProvider, setImageProvider] = useState<ImageProvider>("codex_cli_gpt_image");
@@ -204,6 +208,7 @@ function App() {
   const [optimizedPrompt, setOptimizedPrompt] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [managerOpen, setManagerOpen] = useState(false);
   const [codexOptionsDraft, setCodexOptionsDraft] = useState(
     fallbackCodexModels.model_options.join(", "),
   );
@@ -250,6 +255,8 @@ function App() {
     window.setTimeout(() => {
       settingsCloseRef.current?.focus();
     }, 0);
+    setHistoryOpen(false);
+    setManagerOpen(false);
 
     function handleDrawerKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
@@ -309,6 +316,8 @@ function App() {
     window.setTimeout(() => {
       historyCloseRef.current?.focus();
     }, 0);
+    setSettingsOpen(false);
+    setManagerOpen(false);
 
     function handleDrawerKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
@@ -354,6 +363,36 @@ function App() {
       previousFocus?.focus();
     };
   }, [historyOpen]);
+
+  useEffect(() => {
+    if (!managerOpen) {
+      return;
+    }
+
+    const previousFocus =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : managerTriggerRef.current;
+
+    window.setTimeout(() => {
+      managerCloseRef.current?.focus();
+    }, 0);
+    setSettingsOpen(false);
+    setHistoryOpen(false);
+
+    function handleDrawerKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setManagerOpen(false);
+      }
+    }
+
+    window.addEventListener("keydown", handleDrawerKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleDrawerKeyDown);
+      previousFocus?.focus();
+    };
+  }, [managerOpen]);
 
   async function updateCodexDefaultModel(model: string) {
     setCodexModels((current) => ({ ...current, default_model: model }));
@@ -429,6 +468,28 @@ function App() {
     };
   }
 
+  async function updateSafeSettings(
+    patch: Partial<
+      Pick<SafeSettingsResponse, "selected_agent_provider" | "selected_image_provider">
+    >,
+  ) {
+    try {
+      const response = await fetch(`${backendBaseUrl}/settings/safe`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      if (!response.ok) {
+        throw new Error(await readErrorMessage(response));
+      }
+      const payload = safeSettingsResponseSchema.parse(await response.json());
+      setAgentProvider(payload.selected_agent_provider);
+      setImageProvider(payload.selected_image_provider);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "無法儲存安全設定");
+    }
+  }
+
   async function refreshProviderSettings() {
     setSettingsMessage(null);
     try {
@@ -495,6 +556,7 @@ function App() {
 
   async function openHistoryDrawer() {
     setSettingsOpen(false);
+    setManagerOpen(false);
     setHistoryOpen(true);
     await refreshSessionHistory();
   }
@@ -794,15 +856,26 @@ function App() {
         setHealth(healthPayload);
         setBackendStatus("connected");
 
-        const [codexPayload, codexModelsPayload, ollamaPayload, ollamaModelsPayload, secretsPayload] =
-          await Promise.allSettled([
-            fetchJson("/providers/codex/status", codexStatusResponseSchema, controller.signal),
-            fetchJson("/providers/codex/models", codexModelsResponseSchema, controller.signal),
-            fetchJson("/providers/ollama/status", ollamaStatusResponseSchema, controller.signal),
-            fetchJson("/providers/ollama/models", ollamaModelsResponseSchema, controller.signal),
-            fetchJson("/security/secrets/status", secretStatusResponseSchema, controller.signal),
-          ]);
+        const [
+          settingsPayload,
+          codexPayload,
+          codexModelsPayload,
+          ollamaPayload,
+          ollamaModelsPayload,
+          secretsPayload,
+        ] = await Promise.allSettled([
+          fetchJson("/settings/safe", safeSettingsResponseSchema, controller.signal),
+          fetchJson("/providers/codex/status", codexStatusResponseSchema, controller.signal),
+          fetchJson("/providers/codex/models", codexModelsResponseSchema, controller.signal),
+          fetchJson("/providers/ollama/status", ollamaStatusResponseSchema, controller.signal),
+          fetchJson("/providers/ollama/models", ollamaModelsResponseSchema, controller.signal),
+          fetchJson("/security/secrets/status", secretStatusResponseSchema, controller.signal),
+        ]);
 
+        if (settingsPayload.status === "fulfilled") {
+          setAgentProvider(settingsPayload.value.selected_agent_provider);
+          setImageProvider(settingsPayload.value.selected_image_provider);
+        }
         if (codexPayload.status === "fulfilled") {
           setCodexStatus(codexPayload.value);
         }
@@ -969,7 +1042,11 @@ function App() {
             Agent
             <select
               value={agentProvider}
-              onChange={(event) => setAgentProvider(event.target.value as AgentProvider)}
+              onChange={(event) => {
+                const nextProvider = event.target.value as AgentProvider;
+                setAgentProvider(nextProvider);
+                void updateSafeSettings({ selected_agent_provider: nextProvider });
+              }}
             >
               <option value="codex_cli">Codex CLI</option>
               <option value="ollama_local_llm">Ollama</option>
@@ -1037,7 +1114,11 @@ function App() {
             圖像 Provider
             <select
               value={imageProvider}
-              onChange={(event) => setImageProvider(event.target.value as ImageProvider)}
+              onChange={(event) => {
+                const nextProvider = event.target.value as ImageProvider;
+                setImageProvider(nextProvider);
+                void updateSafeSettings({ selected_image_provider: nextProvider });
+              }}
             >
               <option value="codex_cli_gpt_image">Codex GPT Image</option>
               <option value="diffusers_flux2" disabled>
@@ -1079,7 +1160,20 @@ function App() {
           >
             <History size={17} aria-hidden="true" />
           </button>
-          <button className="icon-button" type="button" title="模型" aria-label="模型狀態">
+          <button
+            ref={managerTriggerRef}
+            className="icon-button"
+            type="button"
+            title="管理"
+            aria-label="開啟管理抽屜"
+            aria-haspopup="dialog"
+            aria-expanded={managerOpen}
+            onClick={() => {
+              setSettingsOpen(false);
+              setHistoryOpen(false);
+              setManagerOpen(true);
+            }}
+          >
             <Database size={17} aria-hidden="true" />
           </button>
           <button
@@ -1092,6 +1186,7 @@ function App() {
             aria-expanded={settingsOpen}
             onClick={() => {
               setHistoryOpen(false);
+              setManagerOpen(false);
               setSettingsOpen(true);
             }}
           >
@@ -1500,6 +1595,64 @@ function App() {
               <span aria-live="polite" aria-atomic="true">
                 {historyMessage ?? "選取一個工作階段即可載入參考圖與生成結果"}
               </span>
+            </footer>
+          </aside>
+        </div>
+      ) : null}
+
+      {managerOpen ? (
+        <div className="drawer-layer" role="presentation">
+          <button
+            className="drawer-scrim"
+            type="button"
+            aria-label="關閉管理抽屜"
+            onClick={() => setManagerOpen(false)}
+          />
+          <aside
+            className="settings-drawer"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="manager-title"
+          >
+            <header className="drawer-header">
+              <div>
+                <span>Manager</span>
+                <h2 id="manager-title">管理中心</h2>
+              </div>
+              <button
+                ref={managerCloseRef}
+                className="icon-button"
+                type="button"
+                title="關閉"
+                aria-label="關閉管理抽屜"
+                onClick={() => setManagerOpen(false)}
+              >
+                <X size={18} aria-hidden="true" />
+              </button>
+            </header>
+
+            <div className="drawer-content">
+              <section className="settings-section">
+                <h3>Models</h3>
+                <p>FLUX 模型狀態、安裝、卸載與本機路徑選擇會接在這裡。</p>
+              </section>
+              <section className="settings-section">
+                <h3>Skills</h3>
+                <p>技能清單與 patch proposal 審核流程會接在這裡。</p>
+              </section>
+              <section className="settings-section">
+                <h3>Templates</h3>
+                <p>模板清單與版本審核流程會接在這裡。</p>
+              </section>
+              <section className="settings-section">
+                <h3>Logs</h3>
+                <p>本機執行記錄與 provider error trace 會接在這裡。</p>
+              </section>
+            </div>
+
+            <footer className="drawer-footer">
+              <Database size={16} aria-hidden="true" />
+              <span>下一步會補 Models / Skills / Templates / Logs API。</span>
             </footer>
           </aside>
         </div>

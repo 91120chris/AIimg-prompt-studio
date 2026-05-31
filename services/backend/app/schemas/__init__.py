@@ -48,7 +48,7 @@ from app.schemas.questionnaire_answers import (
     TextQuestionnaireAnswer,
 )
 from app.schemas.session import SessionCreateRequest, SessionResponse
-from app.schemas.settings import SafeSettingsResponse
+from app.schemas.settings import SafeSettingsPatch, SafeSettingsResponse
 
 __all__ = [
     "AgentQuestionnaireSubmitRequest",
@@ -87,6 +87,7 @@ __all__ = [
     "QuestionnaireTurnResponse",
     "ReferenceImageResponse",
     "SafeSettingsResponse",
+    "SafeSettingsPatch",
     "ScaleQuestion",
     "ScaleQuestionnaireAnswer",
     "SessionCreateRequest",

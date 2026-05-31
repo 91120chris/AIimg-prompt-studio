@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, Request
 
+from app.core.app_settings_store import persist_app_settings
 from app.providers.codex.codex_capabilities import get_codex_status
 from app.providers.ollama.ollama_client import get_ollama_models, get_ollama_status
 from app.schemas.base import StrictBaseModel
@@ -38,6 +39,10 @@ class OllamaDefaultModelPatch(StrictBaseModel):
 
 def get_request_settings(request: Request) -> Settings:
     return request.app.state.settings
+
+
+def persist_request_settings(request: Request, values: dict[str, object]) -> None:
+    persist_app_settings(request.app.state.engine, values)
 
 
 def normalize_model_options(options: list[str]) -> list[str]:
@@ -128,6 +133,13 @@ def patch_codex_model_options(
     settings.codex_model_options = options
     if settings.codex_default_model not in options:
         settings.codex_default_model = options[0]
+    persist_request_settings(
+        request,
+        {
+            "codex_model_options": settings.codex_model_options,
+            "codex_default_model": settings.codex_default_model,
+        },
+    )
     return codex_models_response(settings)
 
 
@@ -154,6 +166,7 @@ def patch_codex_default_model(
             },
         )
     settings.codex_default_model = default_model
+    persist_request_settings(request, {"codex_default_model": settings.codex_default_model})
     return codex_models_response(settings)
 
 
@@ -194,6 +207,15 @@ def patch_codex_runtime_options(
         settings.codex_default_reasoning_summary = payload.default_reasoning_summary
     if "default_verbosity" in fields_set:
         settings.codex_default_verbosity = payload.default_verbosity
+    persist_request_settings(
+        request,
+        {
+            "codex_default_model": settings.codex_default_model,
+            "codex_default_reasoning_effort": settings.codex_default_reasoning_effort,
+            "codex_default_reasoning_summary": settings.codex_default_reasoning_summary,
+            "codex_default_verbosity": settings.codex_default_verbosity,
+        },
+    )
     return codex_models_response(settings)
 
 
@@ -227,4 +249,5 @@ def patch_ollama_default_model(
         )
 
     settings.ollama_selected_model = selected_model
+    persist_request_settings(request, {"ollama_selected_model": settings.ollama_selected_model})
     return OllamaModelsResponse(selected_model=select_ollama_model(settings, models), models=models)

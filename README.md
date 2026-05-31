@@ -2,7 +2,7 @@
 
 Local-first T2I / I2I prompt optimization desktop app.
 
-Current implementation covers the runnable Tauri + React shell, FastAPI backend, provider status, SQLite session storage, safe file URLs, reference image thumbnails, the Codex questionnaire loop, the Codex CLI image-generation path after explicit user confirmation, post-generation feedback questionnaires, and prompt refinement from feedback.
+Current implementation covers the runnable Tauri + React shell, FastAPI backend, provider status, SQLite session storage, safe file URLs, reference image thumbnails, the Codex and Ollama questionnaire loops, the Codex CLI image-generation path after explicit user confirmation, post-generation feedback questionnaires, and prompt refinement from feedback.
 
 ## Backend
 
@@ -82,6 +82,17 @@ cmd /c codex --config model_reasoning_effort=high exec "..."
 
 This matches Codex CLI's `--config key=value` mechanism and keeps the app flexible if future Codex releases add more runtime knobs.
 
+## Ollama Runtime Options
+
+Ollama models are discovered live from `/api/tags`, so the desktop model picker reflects whichever models are currently installed locally. The agent loop uses `/api/generate` with `stream=false` and the same strict JSON schema used by the Codex loop.
+
+```env
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_SELECTED_MODEL=
+OLLAMA_TIMEOUT_SECONDS=300
+OLLAMA_AGENT_TEMPERATURE=0.2
+```
+
 ## Optional Codex Smoke Test
 
 Codex smoke tests are opt-in because they may call a real local Codex model:
@@ -105,7 +116,7 @@ $env:RUN_CODEX_SMOKE="1"; uv run pytest -m codex_smoke
 - If a token was exposed, rotate it in Hugging Face settings.
 - This app does not require an OpenAI API key.
 - Codex CLI is the primary agent provider. The current loop can ask Codex for a schema-validated questionnaire, produce an optimized prompt, generate an image after explicit confirmation, ask for post-generation feedback, and refine the next prompt version from that feedback.
-- Ollama is the local fallback future provider. The desktop shell reads installed Ollama models live from `/api/tags` and lets you choose the current local model; the full Ollama agent loop is still pending.
+- Ollama is the local fallback agent provider. The desktop shell reads installed Ollama models live from `/api/tags`, lets you choose the current local model, and uses `/api/generate` with structured output schema for questionnaire, prompt optimization, feedback questionnaire, and refinement turns.
 - Diffusers FLUX support comes after Milestone 1C / Phase 1.
 - `CORS_ALLOW_ORIGINS` is comma-separated and parsed with `NoDecode`.
 - `CODEX_MODEL_OPTIONS` is comma-separated and parsed with `NoDecode`.

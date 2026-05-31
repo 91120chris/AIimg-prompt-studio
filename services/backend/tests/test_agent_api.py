@@ -48,6 +48,20 @@ class FakeCodexRunner:
         return self.responses.pop(0)
 
 
+class FakeOllamaRunner:
+    responses = []
+    prompts = []
+    models = []
+
+    def __init__(self, settings):
+        self.settings = settings
+
+    def run(self, prompt: str, *, model: str | None = None):
+        self.prompts.append(prompt)
+        self.models.append(model)
+        return self.responses.pop(0)
+
+
 def test_agent_questionnaire_loop_stores_questionnaire_answers_and_prompt_version(
     monkeypatch,
     tmp_path,
@@ -398,7 +412,33 @@ def test_refine_uses_feedback_and_creates_new_prompt_version(monkeypatch, tmp_pa
     assert "cleaner label" in prompt_versions[-1].prompt_text
 
 
-def test_agent_turn_rejects_ollama_until_provider_loop_exists(tmp_path) -> None:
+def test_agent_turn_uses_ollama_runner(monkeypatch, tmp_path) -> None:
+    from app.api import agent
+
+    questionnaire = Questionnaire(
+        questionnaire_id="q_ollama",
+        title="Ollama",
+        questions=[
+            TextQuestion(
+                kind="text",
+                question_id="style",
+                label="Style",
+                prompt="What style?",
+                required=True,
+            )
+        ],
+    )
+    FakeOllamaRunner.responses = [
+        QuestionnaireTurnResponse(
+            kind="questionnaire",
+            message="請補充細節。",
+            questionnaire=questionnaire,
+        )
+    ]
+    FakeOllamaRunner.prompts = []
+    FakeOllamaRunner.models = []
+    monkeypatch.setattr(agent, "OllamaAgentRunner", FakeOllamaRunner)
+
     _, client = make_test_app(tmp_path)
     session_id = client.post("/sessions", json={"title": "Test"}).json()["session_id"]
 
@@ -408,8 +448,10 @@ def test_agent_turn_rejects_ollama_until_provider_loop_exists(tmp_path) -> None:
             "session_id": session_id,
             "original_prompt": "一張產品照片",
             "provider": "ollama_local_llm",
+            "ollama_model": "llama3:latest",
         },
     )
 
-    assert response.status_code == 422
-    assert response.json()["detail"]["code"] == "agent_provider_not_implemented"
+    assert response.status_code == 200
+    assert response.json()["kind"] == "questionnaire"
+    assert FakeOllamaRunner.models == ["llama3:latest"]

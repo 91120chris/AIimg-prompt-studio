@@ -1,4 +1,5 @@
 import json
+from typing import TypeAlias
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import TypeAdapter
@@ -6,8 +7,8 @@ from sqlmodel import select
 
 from app.core.file_store import generated_image_response
 from app.core.prompt_compiler import (
-    build_feedback_refinement_prompt,
     build_feedback_questionnaire_prompt,
+    build_feedback_refinement_prompt,
     build_optimization_prompt,
     build_questionnaire_prompt,
 )
@@ -28,6 +29,7 @@ from app.db.models import (
 )
 from app.db.session import new_session
 from app.providers.codex.codex_agent_provider import CodexAgentRunner
+from app.providers.ollama.ollama_agent_provider import OllamaAgentRunner
 from app.schemas.agent import (
     AgentFeedbackQuestionnaireRequest,
     AgentQuestionnaireSubmitRequest,
@@ -39,9 +41,16 @@ from app.schemas.agent import (
 )
 from app.schemas.errors import StructuredError
 from app.schemas.questionnaire import Questionnaire
+from app.settings import Settings
 
 router = APIRouter(prefix="/agent", tags=["agent"])
 AgentTurnAdapter = TypeAdapter(AgentTurnResponse)
+AgentRequestPayload: TypeAlias = (
+    AgentTurnRequest
+    | AgentQuestionnaireSubmitRequest
+    | AgentFeedbackQuestionnaireRequest
+    | AgentRefineRequest
+)
 
 
 def _engine(request: Request):
@@ -56,18 +65,6 @@ def _structured_http_error(status_code: int, error: StructuredError) -> HTTPExce
     return HTTPException(status_code=status_code, detail=error.model_dump())
 
 
-def _ensure_codex_provider(provider: str) -> None:
-    if provider != "codex_cli":
-        raise _structured_http_error(
-            422,
-            StructuredError(
-                code="agent_provider_not_implemented",
-                message="Milestone 1B 目前先啟用 Codex CLI 問卷流程。",
-                suggestion="請先將 Agent Provider 選為 Codex CLI；Ollama agent loop 會接在後續版本。",
-            ),
-        )
-
-
 def _run_codex_agent(runner: CodexAgentRunner, prompt: str, payload) -> AgentTurnResponse:
     return runner.run(
         prompt,
@@ -75,6 +72,21 @@ def _run_codex_agent(runner: CodexAgentRunner, prompt: str, payload) -> AgentTur
         reasoning_effort=payload.codex_reasoning_effort,
         reasoning_summary=payload.codex_reasoning_summary,
         verbosity=payload.codex_verbosity,
+    )
+
+
+def _run_agent(settings: Settings, prompt: str, payload: AgentRequestPayload) -> AgentTurnResponse:
+    if payload.provider == "codex_cli":
+        return _run_codex_agent(CodexAgentRunner(settings), prompt, payload)
+    if payload.provider == "ollama_local_llm":
+        return OllamaAgentRunner(settings).run(prompt, model=payload.ollama_model)
+    raise _structured_http_error(
+        422,
+        StructuredError(
+            code="agent_provider_not_supported",
+            message="不支援的 Agent Provider。",
+            suggestion="請選擇 Codex CLI 或 Ollama。",
+        ),
     )
 
 
@@ -129,8 +141,8 @@ def _get_latest_prompt_text(db, session_id: str) -> str:
             404,
             StructuredError(
                 code="prompt_not_found",
-                message="找不到此工作階段的原始 prompt。",
-                suggestion="請先送出原始 prompt 產生問卷。",
+                message="找不到這個 session 的原始 prompt。",
+                suggestion="請先送出一段 prompt，建立第一個 agent turn。",
             ),
         )
     return prompt_record.text
@@ -147,8 +159,8 @@ def _get_latest_optimized_prompt_text(db, session_id: str) -> str:
             404,
             StructuredError(
                 code="optimized_prompt_not_found",
-                message="找不到此工作階段的最佳化 prompt。",
-                suggestion="請先完成問卷並生成圖片。",
+                message="找不到這個 session 的最佳化 prompt。",
+                suggestion="請先完成問卷並產生一版最佳化 prompt。",
             ),
         )
     return prompt_version.prompt_text
@@ -161,8 +173,8 @@ def _get_succeeded_generation_job(db, session_id: str, job_id: str) -> Generatio
             404,
             StructuredError(
                 code="generation_job_not_found",
-                message="找不到生成工作。",
-                suggestion="請確認生成工作是否仍存在。",
+                message="找不到指定的生成任務。",
+                suggestion="請確認任務屬於目前 session。",
             ),
         )
     if job.status != "succeeded":
@@ -170,8 +182,8 @@ def _get_succeeded_generation_job(db, session_id: str, job_id: str) -> Generatio
             422,
             StructuredError(
                 code="generation_not_succeeded",
-                message="只有成功生成圖片後才能建立回饋問卷或修正 prompt。",
-                suggestion="請先完成生成，或檢查生成錯誤。",
+                message="這個生成任務尚未成功完成，不能建立回饋問卷。",
+                suggestion="請先完成圖片生成，再進入回饋精修流程。",
             ),
         )
     return job
@@ -188,11 +200,11 @@ def _get_generated_images(db, session_id: str) -> list[GeneratedImageRecord]:
             422,
             StructuredError(
                 code="generated_image_not_found",
-                message="找不到可回饋的生成圖片。",
-                suggestion="請重新生成圖片後再建立回饋問卷。",
+                message="這個 session 還沒有生成圖片。",
+                suggestion="請先完成圖片生成，再建立回饋問卷。",
             ),
         )
-    return images
+    return list(images)
 
 
 def _generation_job_payload(job: GenerationJobRecord) -> dict[str, object]:
@@ -217,8 +229,8 @@ def _get_questionnaire(db, session_id: str, questionnaire_id: str) -> Questionna
             404,
             StructuredError(
                 code="questionnaire_not_found",
-                message="找不到指定問卷。",
-                suggestion="請重新產生問卷後再送出答案。",
+                message="找不到指定的問卷。",
+                suggestion="請重新建立問卷或確認目前 session。",
             ),
         )
     return Questionnaire.model_validate_json(record.payload_json)
@@ -226,9 +238,7 @@ def _get_questionnaire(db, session_id: str, questionnaire_id: str) -> Questionna
 
 @router.post("/turn", response_model=AgentTurnResponse)
 def create_agent_turn(payload: AgentTurnRequest, request: Request) -> AgentTurnResponse:
-    _ensure_codex_provider(payload.provider)
     settings = request.app.state.settings
-    runner = CodexAgentRunner(settings)
 
     with new_session(_engine(request)) as db:
         if db.get(SessionRecord, payload.session_id) is None:
@@ -236,8 +246,8 @@ def create_agent_turn(payload: AgentTurnRequest, request: Request) -> AgentTurnR
                 404,
                 StructuredError(
                     code="session_not_found",
-                    message="找不到工作階段。",
-                    suggestion="請先建立工作階段。",
+                    message="找不到指定的 session。",
+                    suggestion="請先建立或選取一個 session。",
                 ),
             )
 
@@ -248,8 +258,8 @@ def create_agent_turn(payload: AgentTurnRequest, request: Request) -> AgentTurnR
                 text=payload.original_prompt,
             )
         )
-        response = _run_codex_agent(
-            runner,
+        response = _run_agent(
+            settings,
             build_questionnaire_prompt(payload),
             payload,
         )
@@ -264,9 +274,7 @@ def answer_questionnaire(
     payload: AgentQuestionnaireSubmitRequest,
     request: Request,
 ) -> AgentTurnResponse:
-    _ensure_codex_provider(payload.provider)
     settings = request.app.state.settings
-    runner = CodexAgentRunner(settings)
 
     with new_session(_engine(request)) as db:
         if db.get(SessionRecord, payload.session_id) is None:
@@ -274,8 +282,8 @@ def answer_questionnaire(
                 404,
                 StructuredError(
                     code="session_not_found",
-                    message="找不到工作階段。",
-                    suggestion="請先建立工作階段。",
+                    message="找不到指定的 session。",
+                    suggestion="請先建立或選取一個 session。",
                 ),
             )
 
@@ -295,8 +303,8 @@ def answer_questionnaire(
         )
 
         original_prompt = _get_latest_prompt_text(db, payload.session_id)
-        response = _run_codex_agent(
-            runner,
+        response = _run_agent(
+            settings,
             build_optimization_prompt(original_prompt, questionnaire, payload),
             payload,
         )
@@ -311,9 +319,7 @@ def create_feedback_questionnaire(
     payload: AgentFeedbackQuestionnaireRequest,
     request: Request,
 ) -> AgentTurnResponse:
-    _ensure_codex_provider(payload.provider)
     settings = request.app.state.settings
-    runner = CodexAgentRunner(settings)
 
     with new_session(_engine(request)) as db:
         if db.get(SessionRecord, payload.session_id) is None:
@@ -321,8 +327,8 @@ def create_feedback_questionnaire(
                 404,
                 StructuredError(
                     code="session_not_found",
-                    message="找不到工作階段。",
-                    suggestion="請先建立工作階段。",
+                    message="找不到指定的 session。",
+                    suggestion="請先建立或選取一個 session。",
                 ),
             )
 
@@ -331,8 +337,8 @@ def create_feedback_questionnaire(
 
         original_prompt = _get_latest_prompt_text(db, payload.session_id)
         optimized_prompt = _get_latest_optimized_prompt_text(db, payload.session_id)
-        response = _run_codex_agent(
-            runner,
+        response = _run_agent(
+            settings,
             build_feedback_questionnaire_prompt(
                 original_prompt=original_prompt,
                 optimized_prompt=optimized_prompt,
@@ -352,9 +358,7 @@ def refine_prompt_from_feedback(
     payload: AgentRefineRequest,
     request: Request,
 ) -> AgentTurnResponse:
-    _ensure_codex_provider(payload.provider)
     settings = request.app.state.settings
-    runner = CodexAgentRunner(settings)
 
     with new_session(_engine(request)) as db:
         if db.get(SessionRecord, payload.session_id) is None:
@@ -362,8 +366,8 @@ def refine_prompt_from_feedback(
                 404,
                 StructuredError(
                     code="session_not_found",
-                    message="找不到工作階段。",
-                    suggestion="請先建立工作階段。",
+                    message="找不到指定的 session。",
+                    suggestion="請先建立或選取一個 session。",
                 ),
             )
 
@@ -386,8 +390,8 @@ def refine_prompt_from_feedback(
 
         original_prompt = _get_latest_prompt_text(db, payload.session_id)
         previous_optimized_prompt = _get_latest_optimized_prompt_text(db, payload.session_id)
-        response = _run_codex_agent(
-            runner,
+        response = _run_agent(
+            settings,
             build_feedback_refinement_prompt(
                 original_prompt=original_prompt,
                 previous_optimized_prompt=previous_optimized_prompt,

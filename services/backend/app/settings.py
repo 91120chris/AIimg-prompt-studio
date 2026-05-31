@@ -64,6 +64,8 @@ class Settings(BaseSettings):
 
     ollama_base_url: str = "http://localhost:11434"
     ollama_selected_model: str | None = None
+    ollama_timeout_seconds: int = Field(default=300, ge=1, le=3600)
+    ollama_agent_temperature: float = Field(default=0.2, ge=0, le=2)
 
     hf_token: str | None = Field(default=None, repr=False)
     hf_home: str | None = None

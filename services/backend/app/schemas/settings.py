@@ -20,6 +20,8 @@ class SafeSettingsResponse(StrictBaseModel):
     run_codex_smoke: bool
     ollama_base_url: str
     ollama_selected_model: str | None
+    ollama_timeout_seconds: int
+    ollama_agent_temperature: float
     hf_home_configured: bool
     hf_hub_cache_configured: bool
     frontend_api_base_url: str
@@ -44,6 +46,8 @@ class SafeSettingsResponse(StrictBaseModel):
             run_codex_smoke=settings.run_codex_smoke,
             ollama_base_url=settings.ollama_base_url,
             ollama_selected_model=settings.ollama_selected_model,
+            ollama_timeout_seconds=settings.ollama_timeout_seconds,
+            ollama_agent_temperature=settings.ollama_agent_temperature,
             hf_home_configured=settings.hf_home is not None,
             hf_hub_cache_configured=settings.hf_hub_cache is not None,
             frontend_api_base_url=settings.frontend_api_base_url,

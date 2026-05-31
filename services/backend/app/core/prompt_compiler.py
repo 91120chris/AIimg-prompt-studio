@@ -64,6 +64,43 @@ def build_optimization_prompt(
 """
 
 
+def build_feedback_questionnaire_prompt(
+    *,
+    original_prompt: str,
+    optimized_prompt: str,
+    generation_job: dict[str, object],
+    generated_images: list[dict[str, object]],
+) -> str:
+    return f"""你是 Prompt Optimizer Studio 的本機 prompt agent。
+
+任務：圖片生成已完成。請建立一份給使用者填寫的回饋問卷，用來改善下一版 prompt。
+
+硬性規則：
+- 只回傳符合 output schema 的 JSON，不要加 Markdown。
+- output schema 會要求所有欄位都出現；不適用的欄位請填 null，warnings 請填陣列。
+- 問題物件也要填滿所有 schema 欄位；不適用的欄位請填 null。
+- 這是生成後回饋問卷回合，kind 必須是 "questionnaire"。
+- 不要產生圖片，也不要說你已經產生圖片。
+- 不要修改技能、模板或模型 registry。
+- 不要要求 OpenAI API key。
+- 不要要求使用者貼本機檔案路徑。
+- 問卷請使用繁體中文，3 到 5 題。
+- 問題應協助使用者檢查：是否符合需求、要保留什麼、要修正什麼、畫面/風格/文字/構圖問題、下一輪限制。
+
+原始 prompt：
+{original_prompt}
+
+最佳化 prompt：
+{optimized_prompt}
+
+生成工作 safe metadata：
+{_json_dump(generation_job)}
+
+生成圖片 safe metadata：
+{_json_dump(generated_images)}
+"""
+
+
 def build_repair_prompt(raw_output: str, validation_error: str) -> str:
     return f"""上一個回覆沒有通過 Prompt Optimizer Studio 的 strict JSON schema 驗證。
 

@@ -1,7 +1,14 @@
 from fastapi.testclient import TestClient
 from sqlmodel import select
 
-from app.db.models import PromptVersionRecord, QuestionnaireAnswerRecord, QuestionnaireRecord
+from app.db.models import (
+    GeneratedImageRecord,
+    GenerationJobRecord,
+    PromptRecord,
+    PromptVersionRecord,
+    QuestionnaireAnswerRecord,
+    QuestionnaireRecord,
+)
 from app.db.session import new_session
 from app.main import create_app
 from app.schemas.agent import OptimizedPromptTurnResponse, QuestionnaireTurnResponse
@@ -169,6 +176,100 @@ def test_agent_answer_questionnaire_rejects_missing_required_answer(monkeypatch,
 
     assert response.status_code == 422
     assert response.json()["detail"]["code"] == "invalid_answer"
+
+
+def test_feedback_questionnaire_uses_safe_generation_metadata(monkeypatch, tmp_path) -> None:
+    from app.api import agent
+
+    questionnaire = Questionnaire(
+        questionnaire_id="q_feedback",
+        title="生成結果回饋",
+        questions=[
+            TextQuestion(
+                kind="text",
+                question_id="fix",
+                label="要修正的地方",
+                prompt="這張圖下一輪最需要修正什麼？",
+                required=True,
+            )
+        ],
+    )
+    FakeCodexRunner.responses = [
+        QuestionnaireTurnResponse(
+            kind="questionnaire",
+            message="請補充生成結果回饋。",
+            questionnaire=questionnaire,
+        )
+    ]
+    FakeCodexRunner.prompts = []
+    FakeCodexRunner.models = []
+    monkeypatch.setattr(agent, "CodexAgentRunner", FakeCodexRunner)
+
+    app, client = make_test_app(tmp_path)
+    session_id = client.post("/sessions", json={"title": "Test"}).json()["session_id"]
+
+    with new_session(app.state.engine) as db:
+        db.add(
+            PromptRecord(
+                prompt_id="prompt_feedback",
+                session_id=session_id,
+                text="一張玻璃香水瓶產品照",
+            )
+        )
+        db.add(
+            PromptVersionRecord(
+                prompt_version_id="promptv_feedback",
+                session_id=session_id,
+                prompt_text="cinematic glass perfume bottle product photo",
+            )
+        )
+        db.add(
+            GenerationJobRecord(
+                job_id="job_feedback",
+                session_id=session_id,
+                provider="codex_cli_gpt_image",
+                mode="t2i",
+                status="succeeded",
+            )
+        )
+        db.add(
+            GeneratedImageRecord(
+                image_id="img_feedback",
+                session_id=session_id,
+                role="optimized_prompt",
+                filename="image.png",
+                storage_path=str(tmp_path / "private" / "image.png"),
+                width=32,
+                height=24,
+                seed=123,
+                provider="codex_cli_gpt_image",
+            )
+        )
+        db.commit()
+
+    response = client.post(
+        "/agent/feedback-questionnaire",
+        json={
+            "session_id": session_id,
+            "job_id": "job_feedback",
+            "provider": "codex_cli",
+            "codex_model": "gpt-5.5",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["kind"] == "questionnaire"
+    assert FakeCodexRunner.models == ["gpt-5.5"]
+    assert "img_feedback" in FakeCodexRunner.prompts[0]
+    assert "/files/sessions/" in FakeCodexRunner.prompts[0]
+    assert "storage_path" not in FakeCodexRunner.prompts[0]
+    assert str(tmp_path) not in FakeCodexRunner.prompts[0]
+
+    with new_session(app.state.engine) as db:
+        stored_questionnaire = db.get(QuestionnaireRecord, "q_feedback")
+
+    assert stored_questionnaire is not None
 
 
 def test_agent_turn_rejects_ollama_until_provider_loop_exists(tmp_path) -> None:

@@ -1,4 +1,5 @@
 from app.schemas.agent import (
+    AgentFeedbackQuestionnaireRequest,
     AgentQuestionnaireSubmitRequest,
     AgentTurnRequest,
     AgentTurnResponse,
@@ -47,6 +48,7 @@ from app.schemas.settings import SafeSettingsResponse
 
 __all__ = [
     "AgentQuestionnaireSubmitRequest",
+    "AgentFeedbackQuestionnaireRequest",
     "AgentTurnRequest",
     "AgentTurnResponse",
     "BooleanQuestion",

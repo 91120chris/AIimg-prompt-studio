@@ -490,6 +490,38 @@ function App() {
     }
   }
 
+  async function requestFeedbackQuestionnaire(job: GenerationJobResponse) {
+    if (job.status !== "succeeded" || job.images.length === 0) {
+      return;
+    }
+
+    setAgentBusy(true);
+    setAgentMessage("生成完成，Codex 正在建立回饋問卷...");
+    setErrorMessage(null);
+    try {
+      const response = await fetch(`${backendBaseUrl}/agent/feedback-questionnaire`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          session_id: job.session_id,
+          job_id: job.job_id,
+          provider: agentProvider,
+          codex_model: codexModels.default_model,
+          ollama_model: ollamaModels.selected_model,
+        }),
+      });
+      if (!response.ok) {
+        throw new Error(await readErrorMessage(response));
+      }
+      applyAgentTurn(agentTurnResponseSchema.parse(await response.json()));
+    } catch (error) {
+      setAgentMessage("回饋問卷建立失敗");
+      setErrorMessage(error instanceof Error ? error.message : "無法建立生成後回饋問卷");
+    } finally {
+      setAgentBusy(false);
+    }
+  }
+
   async function confirmGeneration() {
     if (!optimizedPrompt.trim()) {
       setErrorMessage("請先取得最佳化 Prompt。");
@@ -528,6 +560,7 @@ function App() {
       if (job.error) {
         setErrorMessage(job.error.suggestion ? `${job.error.message} ${job.error.suggestion}` : job.error.message);
       }
+      await requestFeedbackQuestionnaire(job);
     } catch (error) {
       setGenerationMessage("建立生成工作失敗");
       setErrorMessage(error instanceof Error ? error.message : "無法建立生成工作");

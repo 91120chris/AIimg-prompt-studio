@@ -230,6 +230,8 @@ function App() {
   const [generationMessage, setGenerationMessage] = useState<string | null>(null);
   const [feedbackQuestionnaireContext, setFeedbackQuestionnaireContext] =
     useState<FeedbackQuestionnaireContext | null>(null);
+  const isCodexAgent = agentProvider === "codex_cli";
+  const activeAgentName = isCodexAgent ? "Codex" : "Ollama";
 
   useEffect(() => {
     setCodexOptionsDraft(codexModels.model_options.join(", "));
@@ -410,6 +412,23 @@ function App() {
     }
   }
 
+  function agentProviderPayload() {
+    if (agentProvider === "codex_cli") {
+      return {
+        provider: agentProvider,
+        codex_model: codexModels.default_model,
+        codex_reasoning_effort: codexModels.default_reasoning_effort,
+        codex_reasoning_summary: codexModels.default_reasoning_summary,
+        codex_verbosity: codexModels.default_verbosity,
+      };
+    }
+
+    return {
+      provider: agentProvider,
+      ollama_model: ollamaModels.selected_model,
+    };
+  }
+
   async function refreshProviderSettings() {
     setSettingsMessage(null);
     try {
@@ -577,7 +596,7 @@ function App() {
     }
 
     setAgentBusy(true);
-    setAgentMessage("Codex 正在分析 prompt...");
+    setAgentMessage(`${activeAgentName} 正在分析 prompt...`);
     setErrorMessage(null);
     setFeedbackQuestionnaireContext(null);
     try {
@@ -589,12 +608,7 @@ function App() {
           session_id: session.session_id,
           original_prompt: prompt,
           mode: workflowMode,
-          provider: agentProvider,
-          codex_model: codexModels.default_model,
-          codex_reasoning_effort: codexModels.default_reasoning_effort,
-          codex_reasoning_summary: codexModels.default_reasoning_summary,
-          codex_verbosity: codexModels.default_verbosity,
-          ollama_model: ollamaModels.selected_model,
+          ...agentProviderPayload(),
         }),
       });
       if (!response.ok) {
@@ -620,8 +634,8 @@ function App() {
     setAgentBusy(true);
     setAgentMessage(
       isFeedbackQuestionnaire
-        ? "Codex 正在根據回饋修正 prompt..."
-        : "Codex 正在整理答案並最佳化 prompt...",
+        ? `${activeAgentName} 正在根據回饋修正 prompt...`
+        : `${activeAgentName} 正在整理答案並最佳化 prompt...`,
     );
     setErrorMessage(null);
     try {
@@ -635,12 +649,7 @@ function App() {
             session_id: currentSession.session_id,
             questionnaire_id: questionnaire.questionnaire_id,
             ...(isFeedbackQuestionnaire ? { job_id: feedbackQuestionnaireContext.jobId } : {}),
-            provider: agentProvider,
-            codex_model: codexModels.default_model,
-            codex_reasoning_effort: codexModels.default_reasoning_effort,
-            codex_reasoning_summary: codexModels.default_reasoning_summary,
-            codex_verbosity: codexModels.default_verbosity,
-            ollama_model: ollamaModels.selected_model,
+            ...agentProviderPayload(),
             answers,
           }),
         },
@@ -664,7 +673,7 @@ function App() {
     }
 
     setAgentBusy(true);
-    setAgentMessage("生成完成，Codex 正在建立回饋問卷...");
+    setAgentMessage(`生成完成，${activeAgentName} 正在建立回饋問卷...`);
     setErrorMessage(null);
     try {
       const response = await fetch(`${backendBaseUrl}/agent/feedback-questionnaire`, {
@@ -673,12 +682,7 @@ function App() {
         body: JSON.stringify({
           session_id: job.session_id,
           job_id: job.job_id,
-          provider: agentProvider,
-          codex_model: codexModels.default_model,
-          codex_reasoning_effort: codexModels.default_reasoning_effort,
-          codex_reasoning_summary: codexModels.default_reasoning_summary,
-          codex_verbosity: codexModels.default_verbosity,
-          ollama_model: ollamaModels.selected_model,
+          ...agentProviderPayload(),
         }),
       });
       if (!response.ok) {
@@ -971,39 +975,43 @@ function App() {
               <option value="ollama_local_llm">Ollama</option>
             </select>
           </label>
-          <label>
-            Codex 模型
-            <select
-              value={codexModels.default_model}
-              onChange={(event) => {
-                void updateCodexDefaultModel(event.target.value);
-              }}
-            >
-              {codexModels.model_options.map((model) => (
-                <option key={model} value={model}>
-                  {model}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            思考強度
-            <select
-              value={codexModels.default_reasoning_effort}
-              onChange={(event) => {
-                void updateCodexRuntimeOptions({
-                  default_reasoning_effort: event.target
-                    .value as CodexModelsResponse["default_reasoning_effort"],
-                });
-              }}
-            >
-              {codexModels.reasoning_effort_options.map((effort) => (
-                <option key={effort} value={effort}>
-                  {effort}
-                </option>
-              ))}
-            </select>
-          </label>
+          {isCodexAgent ? (
+            <>
+              <label>
+                Codex 模型
+                <select
+                  value={codexModels.default_model}
+                  onChange={(event) => {
+                    void updateCodexDefaultModel(event.target.value);
+                  }}
+                >
+                  {codexModels.model_options.map((model) => (
+                    <option key={model} value={model}>
+                      {model}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                思考強度
+                <select
+                  value={codexModels.default_reasoning_effort}
+                  onChange={(event) => {
+                    void updateCodexRuntimeOptions({
+                      default_reasoning_effort: event.target
+                        .value as CodexModelsResponse["default_reasoning_effort"],
+                    });
+                  }}
+                >
+                  {codexModels.reasoning_effort_options.map((effort) => (
+                    <option key={effort} value={effort}>
+                      {effort}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </>
+          ) : (
           <label>
             Ollama 模型
             <select
@@ -1024,6 +1032,7 @@ function App() {
               )}
             </select>
           </label>
+          )}
           <label>
             圖像 Provider
             <select
@@ -1529,6 +1538,7 @@ function App() {
             </header>
 
             <div className="drawer-content">
+              {isCodexAgent ? (
               <section className="settings-section">
                 <h3>Codex CLI</h3>
                 <label>
@@ -1621,6 +1631,7 @@ function App() {
                 </button>
               </section>
 
+              ) : (
               <section className="settings-section">
                 <h3>Ollama</h3>
                 <label>
@@ -1654,6 +1665,7 @@ function App() {
                   重新整理
                 </button>
               </section>
+              )}
 
               <section className="settings-section">
                 <h3>狀態</h3>

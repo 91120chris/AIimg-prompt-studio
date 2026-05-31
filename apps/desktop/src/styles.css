@@ -170,7 +170,7 @@ p {
 
 .toolbar {
   display: grid;
-  grid-template-columns: repeat(7, minmax(72px, 1fr));
+  grid-template-columns: repeat(6, minmax(76px, 1fr));
   gap: 8px;
   min-width: 0;
 }

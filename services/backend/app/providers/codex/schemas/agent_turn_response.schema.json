@@ -1,477 +1,226 @@
 {
-  "$defs": {
-    "BooleanQuestion": {
-      "additionalProperties": false,
-      "properties": {
-        "false_label": {
-          "default": "否",
-          "title": "False Label",
-          "type": "string"
-        },
-        "kind": {
-          "const": "boolean",
-          "title": "Kind",
-          "type": "string"
-        },
-        "label": {
-          "title": "Label",
-          "type": "string"
-        },
-        "prompt": {
-          "title": "Prompt",
-          "type": "string"
-        },
-        "question_id": {
-          "title": "Question Id",
-          "type": "string"
-        },
-        "required": {
-          "default": true,
-          "title": "Required",
-          "type": "boolean"
-        },
-        "true_label": {
-          "default": "是",
-          "title": "True Label",
-          "type": "string"
-        }
-      },
-      "required": [
-        "question_id",
-        "label",
-        "prompt",
-        "kind"
-      ],
-      "title": "BooleanQuestion",
-      "type": "object"
-    },
-    "ChoiceQuestion": {
-      "additionalProperties": false,
-      "properties": {
-        "allow_multiple": {
-          "default": false,
-          "title": "Allow Multiple",
-          "type": "boolean"
-        },
-        "kind": {
-          "const": "choice",
-          "title": "Kind",
-          "type": "string"
-        },
-        "label": {
-          "title": "Label",
-          "type": "string"
-        },
-        "options": {
-          "items": {
-            "$ref": "#/$defs/QuestionOption"
-          },
-          "minItems": 1,
-          "title": "Options",
-          "type": "array"
-        },
-        "prompt": {
-          "title": "Prompt",
-          "type": "string"
-        },
-        "question_id": {
-          "title": "Question Id",
-          "type": "string"
-        },
-        "required": {
-          "default": true,
-          "title": "Required",
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "question_id",
-        "label",
-        "prompt",
-        "kind",
-        "options"
-      ],
-      "title": "ChoiceQuestion",
-      "type": "object"
-    },
-    "ErrorTurnResponse": {
-      "additionalProperties": false,
-      "properties": {
-        "error": {
-          "$ref": "#/$defs/StructuredError"
-        },
-        "kind": {
-          "const": "error",
-          "title": "Kind",
-          "type": "string"
-        }
-      },
-      "required": [
-        "kind",
-        "error"
-      ],
-      "title": "ErrorTurnResponse",
-      "type": "object"
-    },
-    "MessageTurnResponse": {
-      "additionalProperties": false,
-      "properties": {
-        "kind": {
-          "const": "message",
-          "title": "Kind",
-          "type": "string"
-        },
-        "message": {
-          "title": "Message",
-          "type": "string"
-        },
-        "warnings": {
-          "items": {
-            "type": "string"
-          },
-          "title": "Warnings",
-          "type": "array"
-        }
-      },
-      "required": [
-        "kind",
-        "message"
-      ],
-      "title": "MessageTurnResponse",
-      "type": "object"
-    },
-    "OptimizedPromptTurnResponse": {
-      "additionalProperties": false,
-      "properties": {
-        "kind": {
-          "const": "optimized_prompt",
-          "title": "Kind",
-          "type": "string"
-        },
-        "message": {
-          "title": "Message",
-          "type": "string"
-        },
-        "optimized_prompt": {
-          "title": "Optimized Prompt",
-          "type": "string"
-        },
-        "prompt_version_title": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Prompt Version Title"
-        },
-        "warnings": {
-          "items": {
-            "type": "string"
-          },
-          "title": "Warnings",
-          "type": "array"
-        }
-      },
-      "required": [
-        "kind",
-        "message",
-        "optimized_prompt"
-      ],
-      "title": "OptimizedPromptTurnResponse",
-      "type": "object"
-    },
-    "QuestionOption": {
-      "additionalProperties": false,
-      "properties": {
-        "description": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Description"
-        },
-        "label": {
-          "title": "Label",
-          "type": "string"
-        },
-        "value": {
-          "title": "Value",
-          "type": "string"
-        }
-      },
-      "required": [
-        "value",
-        "label"
-      ],
-      "title": "QuestionOption",
-      "type": "object"
-    },
-    "Questionnaire": {
-      "additionalProperties": false,
-      "properties": {
-        "description": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Description"
-        },
-        "questionnaire_id": {
-          "title": "Questionnaire Id",
-          "type": "string"
-        },
-        "questions": {
-          "items": {
-            "discriminator": {
-              "mapping": {
-                "boolean": "#/$defs/BooleanQuestion",
-                "choice": "#/$defs/ChoiceQuestion",
-                "scale": "#/$defs/ScaleQuestion",
-                "text": "#/$defs/TextQuestion"
-              },
-              "propertyName": "kind"
-            },
-            "oneOf": [
-              {
-                "$ref": "#/$defs/TextQuestion"
-              },
-              {
-                "$ref": "#/$defs/ChoiceQuestion"
-              },
-              {
-                "$ref": "#/$defs/BooleanQuestion"
-              },
-              {
-                "$ref": "#/$defs/ScaleQuestion"
-              }
-            ]
-          },
-          "minItems": 1,
-          "title": "Questions",
-          "type": "array"
-        },
-        "title": {
-          "title": "Title",
-          "type": "string"
-        }
-      },
-      "required": [
-        "questionnaire_id",
-        "title",
-        "questions"
-      ],
-      "title": "Questionnaire",
-      "type": "object"
-    },
-    "QuestionnaireTurnResponse": {
-      "additionalProperties": false,
-      "properties": {
-        "kind": {
-          "const": "questionnaire",
-          "title": "Kind",
-          "type": "string"
-        },
-        "message": {
-          "title": "Message",
-          "type": "string"
-        },
-        "questionnaire": {
-          "$ref": "#/$defs/Questionnaire"
-        },
-        "warnings": {
-          "items": {
-            "type": "string"
-          },
-          "title": "Warnings",
-          "type": "array"
-        }
-      },
-      "required": [
-        "kind",
-        "message",
-        "questionnaire"
-      ],
-      "title": "QuestionnaireTurnResponse",
-      "type": "object"
-    },
-    "ScaleQuestion": {
-      "additionalProperties": false,
-      "properties": {
-        "kind": {
-          "const": "scale",
-          "title": "Kind",
-          "type": "string"
-        },
-        "label": {
-          "title": "Label",
-          "type": "string"
-        },
-        "max_value": {
-          "title": "Max Value",
-          "type": "integer"
-        },
-        "min_value": {
-          "title": "Min Value",
-          "type": "integer"
-        },
-        "prompt": {
-          "title": "Prompt",
-          "type": "string"
-        },
-        "question_id": {
-          "title": "Question Id",
-          "type": "string"
-        },
-        "required": {
-          "default": true,
-          "title": "Required",
-          "type": "boolean"
-        },
-        "step": {
-          "default": 1,
-          "minimum": 1,
-          "title": "Step",
-          "type": "integer"
-        }
-      },
-      "required": [
-        "question_id",
-        "label",
-        "prompt",
-        "kind",
-        "min_value",
-        "max_value"
-      ],
-      "title": "ScaleQuestion",
-      "type": "object"
-    },
-    "StructuredError": {
+  "additionalProperties": false,
+  "properties": {
+    "error": {
       "additionalProperties": false,
       "properties": {
         "code": {
-          "title": "Code",
           "type": "string"
         },
         "message": {
-          "title": "Message",
           "type": "string"
         },
         "suggestion": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Suggestion"
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
         "code",
-        "message"
+        "message",
+        "suggestion"
       ],
-      "title": "StructuredError",
-      "type": "object"
+      "type": [
+        "object",
+        "null"
+      ]
     },
-    "TextQuestion": {
+    "kind": {
+      "enum": [
+        "message",
+        "questionnaire",
+        "optimized_prompt",
+        "error"
+      ],
+      "type": "string"
+    },
+    "message": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "optimized_prompt": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "prompt_version_title": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "questionnaire": {
       "additionalProperties": false,
       "properties": {
-        "kind": {
-          "const": "text",
-          "title": "Kind",
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "questionnaire_id": {
           "type": "string"
         },
-        "label": {
-          "title": "Label",
-          "type": "string"
-        },
-        "max_length": {
-          "anyOf": [
-            {
-              "minimum": 1,
-              "type": "integer"
+        "questions": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "allow_multiple": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "false_label": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "kind": {
+                "enum": [
+                  "text",
+                  "choice",
+                  "boolean",
+                  "scale"
+                ],
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "max_length": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "max_value": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "min_value": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "options": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "description": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "label": {
+                      "type": "string"
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "description",
+                    "label",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                "type": [
+                  "array",
+                  "null"
+                ]
+              },
+              "placeholder": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "question_id": {
+                "type": "string"
+              },
+              "required": {
+                "type": "boolean"
+              },
+              "step": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "true_label": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
             },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Max Length"
+            "required": [
+              "allow_multiple",
+              "false_label",
+              "kind",
+              "label",
+              "max_length",
+              "max_value",
+              "min_value",
+              "options",
+              "placeholder",
+              "prompt",
+              "question_id",
+              "required",
+              "step",
+              "true_label"
+            ],
+            "type": "object"
+          },
+          "minItems": 1,
+          "type": "array"
         },
-        "placeholder": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Placeholder"
-        },
-        "prompt": {
-          "title": "Prompt",
+        "title": {
           "type": "string"
-        },
-        "question_id": {
-          "title": "Question Id",
-          "type": "string"
-        },
-        "required": {
-          "default": true,
-          "title": "Required",
-          "type": "boolean"
         }
       },
       "required": [
-        "question_id",
-        "label",
-        "prompt",
-        "kind"
+        "description",
+        "questionnaire_id",
+        "questions",
+        "title"
       ],
-      "title": "TextQuestion",
-      "type": "object"
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     }
   },
-  "discriminator": {
-    "mapping": {
-      "error": "#/$defs/ErrorTurnResponse",
-      "message": "#/$defs/MessageTurnResponse",
-      "optimized_prompt": "#/$defs/OptimizedPromptTurnResponse",
-      "questionnaire": "#/$defs/QuestionnaireTurnResponse"
-    },
-    "propertyName": "kind"
-  },
-  "oneOf": [
-    {
-      "$ref": "#/$defs/MessageTurnResponse"
-    },
-    {
-      "$ref": "#/$defs/QuestionnaireTurnResponse"
-    },
-    {
-      "$ref": "#/$defs/OptimizedPromptTurnResponse"
-    },
-    {
-      "$ref": "#/$defs/ErrorTurnResponse"
-    }
-  ]
+  "required": [
+    "error",
+    "kind",
+    "message",
+    "optimized_prompt",
+    "prompt_version_title",
+    "questionnaire",
+    "warnings"
+  ],
+  "title": "AgentTurnResponse",
+  "type": "object"
 }

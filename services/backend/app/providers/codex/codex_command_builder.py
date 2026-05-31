@@ -8,6 +8,7 @@ def build_codex_exec_command(
     prompt: str,
     *,
     model: str | None = None,
+    sandbox: str | None = None,
     output_schema_path: str | Path | None = None,
 ) -> list[str]:
     command = [
@@ -17,6 +18,8 @@ def build_codex_exec_command(
     ]
     if model and model != "auto":
         command.extend(["--model", model])
+    if sandbox:
+        command.extend(["--sandbox", sandbox])
     command.append("exec")
     if output_schema_path is not None:
         command.extend(["--output-schema", str(output_schema_path)])
@@ -29,6 +32,7 @@ def build_codex_image_exec_command(
     prompt: str,
     *,
     model: str | None = None,
+    sandbox: str | None = None,
     output_schema_path: str | Path | None = None,
     reference_image_paths: list[str | Path] | None = None,
 ) -> list[str]:
@@ -36,6 +40,7 @@ def build_codex_image_exec_command(
         binary,
         prompt,
         model=model,
+        sandbox=sandbox,
         output_schema_path=output_schema_path,
     )
     prompt_arg = command.pop()

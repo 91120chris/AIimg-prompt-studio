@@ -25,3 +25,14 @@ def test_codex_schema_files_exist_in_provider_directory() -> None:
     assert (schema_dir / "agent_turn_response.schema.json").exists()
     assert (schema_dir / "questionnaire_answer_payload.schema.json").exists()
     assert (schema_dir / "codex_image_response.schema.json").exists()
+
+
+def test_agent_turn_schema_has_codex_compatible_object_root() -> None:
+    schema_path = generate_schema_files()[0]
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+
+    assert schema_path.name == "agent_turn_response.schema.json"
+    assert schema["type"] == "object"
+    assert schema["additionalProperties"] is False
+    assert "oneOf" not in schema
+    assert set(schema["required"]) == set(schema["properties"])

@@ -5,6 +5,20 @@ from pydantic import Field
 from app.schemas.base import StrictBaseModel
 from app.schemas.errors import StructuredError
 from app.schemas.questionnaire import Questionnaire
+from app.schemas.questionnaire_answers import QuestionnaireAnswerPayload
+
+
+AgentProvider = Literal["codex_cli", "ollama_local_llm"]
+WorkflowMode = Literal["t2i", "i2i"]
+
+
+class AgentTurnRequest(StrictBaseModel):
+    session_id: str
+    original_prompt: str = Field(min_length=1, max_length=12000)
+    mode: WorkflowMode = "t2i"
+    provider: AgentProvider = "codex_cli"
+    codex_model: str | None = None
+    ollama_model: str | None = None
 
 
 class MessageTurnResponse(StrictBaseModel):
@@ -31,6 +45,12 @@ class OptimizedPromptTurnResponse(StrictBaseModel):
 class ErrorTurnResponse(StrictBaseModel):
     kind: Literal["error"]
     error: StructuredError
+
+
+class AgentQuestionnaireSubmitRequest(QuestionnaireAnswerPayload):
+    provider: AgentProvider = "codex_cli"
+    codex_model: str | None = None
+    ollama_model: str | None = None
 
 
 AgentTurnResponse = Annotated[

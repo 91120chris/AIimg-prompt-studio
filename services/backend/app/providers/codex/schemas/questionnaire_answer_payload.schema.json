@@ -18,8 +18,8 @@
         }
       },
       "required": [
-        "question_id",
         "kind",
+        "question_id",
         "value"
       ],
       "title": "BooleanQuestionnaireAnswer",
@@ -43,8 +43,8 @@
         }
       },
       "required": [
-        "question_id",
         "kind",
+        "question_id",
         "value"
       ],
       "title": "ChoiceQuestionnaireAnswer",
@@ -72,8 +72,8 @@
         }
       },
       "required": [
-        "question_id",
         "kind",
+        "question_id",
         "values"
       ],
       "title": "MultiChoiceQuestionnaireAnswer",
@@ -97,8 +97,8 @@
         }
       },
       "required": [
-        "question_id",
         "kind",
+        "question_id",
         "value"
       ],
       "title": "ScaleQuestionnaireAnswer",
@@ -122,8 +122,8 @@
         }
       },
       "required": [
-        "question_id",
         "kind",
+        "question_id",
         "value"
       ],
       "title": "TextQuestionnaireAnswer",
@@ -176,9 +176,9 @@
     }
   },
   "required": [
-    "session_id",
+    "answers",
     "questionnaire_id",
-    "answers"
+    "session_id"
   ],
   "title": "QuestionnaireAnswerPayload",
   "type": "object"

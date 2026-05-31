@@ -1,8 +1,8 @@
 # Prompt Optimizer Studio
 
-Local-first T2I / I2I prompt optimization desktop app scaffold.
+Local-first T2I / I2I prompt optimization desktop app.
 
-Milestone 0A provides a runnable FastAPI backend, React/Vite frontend shell, and Tauri v2 desktop shell. Codex, Ollama, database, safe files, and generation workflows come in later milestones.
+Current implementation covers the runnable Tauri + React shell, FastAPI backend, provider status, SQLite session storage, safe file URLs, reference image thumbnails, and the first Codex questionnaire loop. Image generation remains reserved for Milestone 1C.
 
 ## Backend
 
@@ -83,9 +83,35 @@ $env:RUN_CODEX_SMOKE="1"; uv run pytest -m codex_smoke
 - Do not paste Hugging Face tokens into source files.
 - If a token was exposed, rotate it in Hugging Face settings.
 - This app does not require an OpenAI API key.
-- Codex CLI is the primary future provider.
-- Ollama is the local fallback future provider. The desktop shell reads installed Ollama models live from `/api/tags` and lets you choose the current local model.
+- Codex CLI is the primary agent provider. Milestone 1B can ask Codex for a schema-validated questionnaire and then produce an optimized prompt from answers.
+- Ollama is the local fallback future provider. The desktop shell reads installed Ollama models live from `/api/tags` and lets you choose the current local model; the full Ollama agent loop is still pending.
 - Diffusers FLUX support comes after Milestone 1C / Phase 1.
 - `CORS_ALLOW_ORIGINS` is comma-separated and parsed with `NoDecode`.
 - `CODEX_MODEL_OPTIONS` is comma-separated and parsed with `NoDecode`.
 - Tauri development requires Rust/Cargo. Install the Rust MSVC toolchain before running `npm run tauri:dev`.
+
+## Implemented Local APIs
+
+- `GET /health`
+- `GET /providers/codex/status`
+- `GET /providers/codex/models`
+- `PATCH /providers/codex/model-options`
+- `PATCH /providers/codex/default-model`
+- `GET /providers/ollama/status`
+- `GET /providers/ollama/models`
+- `PATCH /providers/ollama/default-model`
+- `GET /settings/safe`
+- `PATCH /settings/safe`
+- `GET /security/secrets/status`
+- `POST /sessions`
+- `GET /sessions`
+- `GET /sessions/{session_id}`
+- `DELETE /sessions/{session_id}`
+- `POST /sessions/{session_id}/reference-images`
+- `DELETE /sessions/{session_id}/reference-images/{slot}`
+- `GET /sessions/{session_id}/reference-images`
+- `GET /sessions/{session_id}/generated-images`
+- `POST /agent/turn`
+- `POST /agent/answer-questionnaire`
+- `GET /files/sessions/{session_id}/generated-images/{image_id}`
+- `GET /files/sessions/{session_id}/reference-images/{reference_image_id}`

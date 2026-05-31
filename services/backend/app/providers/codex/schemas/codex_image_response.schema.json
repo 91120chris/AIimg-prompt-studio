@@ -65,15 +65,17 @@
         }
       },
       "required": [
-        "image_id",
-        "session_id",
-        "role",
-        "url",
+        "created_at",
         "filename",
-        "width",
         "height",
+        "image_id",
         "provider",
-        "created_at"
+        "role",
+        "seed",
+        "session_id",
+        "thumbnail_url",
+        "url",
+        "width"
       ],
       "title": "GenerationImage",
       "type": "object"
@@ -104,7 +106,8 @@
       },
       "required": [
         "code",
-        "message"
+        "message",
+        "suggestion"
       ],
       "title": "StructuredError",
       "type": "object"
@@ -153,11 +156,12 @@
     }
   },
   "required": [
-    "status",
-    "session_id",
+    "error",
+    "images",
     "job_id",
     "provider",
-    "images"
+    "session_id",
+    "status"
   ],
   "title": "GenerationResult",
   "type": "object"

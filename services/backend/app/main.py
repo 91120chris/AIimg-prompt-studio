@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 
+from app.api.agent import router as agent_router
 from app.api.files import router as files_router
 from app.api.providers import router as providers_router
 from app.api.security import router as security_router
@@ -32,6 +33,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(security_router)
     app.include_router(providers_router)
     app.include_router(sessions_router)
+    app.include_router(agent_router)
     app.include_router(files_router)
 
     return app

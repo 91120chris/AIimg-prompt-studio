@@ -1,4 +1,6 @@
 from app.schemas.agent import (
+    AgentQuestionnaireSubmitRequest,
+    AgentTurnRequest,
     AgentTurnResponse,
     ErrorTurnResponse,
     MessageTurnResponse,
@@ -37,6 +39,8 @@ from app.schemas.session import SessionCreateRequest, SessionResponse
 from app.schemas.settings import SafeSettingsResponse
 
 __all__ = [
+    "AgentQuestionnaireSubmitRequest",
+    "AgentTurnRequest",
     "AgentTurnResponse",
     "BooleanQuestion",
     "BooleanQuestionnaireAnswer",

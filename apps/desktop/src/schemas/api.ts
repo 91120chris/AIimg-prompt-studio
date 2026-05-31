@@ -41,6 +41,98 @@ export const secretStatusResponseSchema = z.object({
   hf_hub_cache_configured: z.boolean(),
 });
 
+export const structuredErrorSchema = z.object({
+  code: z.string(),
+  message: z.string(),
+  suggestion: z.string().nullable(),
+});
+
+export const questionOptionSchema = z.object({
+  value: z.string(),
+  label: z.string(),
+  description: z.string().nullable().optional(),
+});
+
+export const textQuestionSchema = z.object({
+  kind: z.literal("text"),
+  question_id: z.string(),
+  label: z.string(),
+  prompt: z.string(),
+  required: z.boolean(),
+  placeholder: z.string().nullable().optional(),
+  max_length: z.number().nullable().optional(),
+});
+
+export const choiceQuestionSchema = z.object({
+  kind: z.literal("choice"),
+  question_id: z.string(),
+  label: z.string(),
+  prompt: z.string(),
+  required: z.boolean(),
+  options: z.array(questionOptionSchema),
+  allow_multiple: z.boolean(),
+});
+
+export const booleanQuestionSchema = z.object({
+  kind: z.literal("boolean"),
+  question_id: z.string(),
+  label: z.string(),
+  prompt: z.string(),
+  required: z.boolean(),
+  true_label: z.string(),
+  false_label: z.string(),
+});
+
+export const scaleQuestionSchema = z.object({
+  kind: z.literal("scale"),
+  question_id: z.string(),
+  label: z.string(),
+  prompt: z.string(),
+  required: z.boolean(),
+  min_value: z.number(),
+  max_value: z.number(),
+  step: z.number(),
+});
+
+export const questionSchema = z.discriminatedUnion("kind", [
+  textQuestionSchema,
+  choiceQuestionSchema,
+  booleanQuestionSchema,
+  scaleQuestionSchema,
+]);
+
+export const questionnaireSchema = z.object({
+  questionnaire_id: z.string(),
+  title: z.string(),
+  description: z.string().nullable().optional(),
+  questions: z.array(questionSchema),
+});
+
+export const agentTurnResponseSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("message"),
+    message: z.string(),
+    warnings: z.array(z.string()).optional(),
+  }),
+  z.object({
+    kind: z.literal("questionnaire"),
+    message: z.string(),
+    questionnaire: questionnaireSchema,
+    warnings: z.array(z.string()).optional(),
+  }),
+  z.object({
+    kind: z.literal("optimized_prompt"),
+    message: z.string(),
+    optimized_prompt: z.string(),
+    prompt_version_title: z.string().nullable().optional(),
+    warnings: z.array(z.string()).optional(),
+  }),
+  z.object({
+    kind: z.literal("error"),
+    error: structuredErrorSchema,
+  }),
+]);
+
 export const referenceImageResponseSchema = z.object({
   reference_image_id: z.string(),
   session_id: z.string(),
@@ -82,5 +174,8 @@ export type CodexModelsResponse = z.infer<typeof codexModelsResponseSchema>;
 export type OllamaStatusResponse = z.infer<typeof ollamaStatusResponseSchema>;
 export type OllamaModelsResponse = z.infer<typeof ollamaModelsResponseSchema>;
 export type SecretStatusResponse = z.infer<typeof secretStatusResponseSchema>;
+export type AgentTurnResponse = z.infer<typeof agentTurnResponseSchema>;
+export type Question = z.infer<typeof questionSchema>;
+export type Questionnaire = z.infer<typeof questionnaireSchema>;
 export type ReferenceImageResponse = z.infer<typeof referenceImageResponseSchema>;
 export type SessionResponse = z.infer<typeof sessionResponseSchema>;

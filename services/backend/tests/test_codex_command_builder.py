@@ -53,3 +53,21 @@ def test_codex_exec_command_can_skip_git_check_for_scratch_workspace() -> None:
     exec_index = command.index("exec")
     assert command[exec_index + 1] == "--skip-git-repo-check"
     assert command[-1] == "-"
+
+
+def test_codex_exec_command_adds_config_overrides_before_exec() -> None:
+    command = build_codex_exec_command(
+        fake_binary(),
+        "-",
+        config_overrides={
+            "model_reasoning_effort": "xhigh",
+            "model_verbosity": "high",
+        },
+    )
+
+    exec_index = command.index("exec")
+    config_indices = [index for index, value in enumerate(command) if value == "--config"]
+    assert config_indices
+    assert all(index < exec_index for index in config_indices)
+    assert 'model_reasoning_effort="xhigh"' in command
+    assert 'model_verbosity="high"' in command

@@ -61,6 +61,27 @@ curl http://localhost:11434/api/tags
 
 If `codex --version` fails in PowerShell because of execution policy, use `cmd /c codex --version` and later configure `CODEX_BINARY_PATH=codex.cmd` or an absolute executable path.
 
+## Codex Runtime Options
+
+Codex model labels are configured in `.env` with `CODEX_MODEL_OPTIONS`, while the active default is `CODEX_DEFAULT_MODEL`. The desktop settings drawer can update those in memory during a running backend session.
+
+Reasoning controls are separate from model labels:
+
+```env
+CODEX_DEFAULT_REASONING_EFFORT=medium
+CODEX_REASONING_EFFORT_OPTIONS=low,medium,high,xhigh
+CODEX_DEFAULT_REASONING_SUMMARY=auto
+CODEX_DEFAULT_VERBOSITY=
+```
+
+When the app invokes Codex CLI, it keeps `--model` for the selected model and sends runtime behavior through Codex config overrides, for example:
+
+```powershell
+cmd /c codex --config model_reasoning_effort=high exec "..."
+```
+
+This matches Codex CLI's `--config key=value` mechanism and keeps the app flexible if future Codex releases add more runtime knobs.
+
 ## Optional Codex Smoke Test
 
 Codex smoke tests are opt-in because they may call a real local Codex model:
@@ -97,6 +118,7 @@ $env:RUN_CODEX_SMOKE="1"; uv run pytest -m codex_smoke
 - `GET /providers/codex/models`
 - `PATCH /providers/codex/model-options`
 - `PATCH /providers/codex/default-model`
+- `PATCH /providers/codex/runtime-options`
 - `GET /providers/ollama/status`
 - `GET /providers/ollama/models`
 - `PATCH /providers/ollama/default-model`

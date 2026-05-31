@@ -52,6 +52,7 @@ def test_codex_image_provider_registers_generated_file(monkeypatch, tmp_path) ->
         optimized_prompt="cinematic city",
         parameters={"steps": 28, "guidance": 3.5, "seed": 123},
         reference_image_ids=[],
+        codex_reasoning_effort="low",
     )
     provider = CodexImageProvider(settings, executor=fake_executor)
 
@@ -70,5 +71,6 @@ def test_codex_image_provider_registers_generated_file(monkeypatch, tmp_path) ->
     assert records[0].thumbnail_storage_path is not None
     assert records[0].seed == 123
     assert commands[0][commands[0].index("--sandbox") + 1] == "workspace-write"
+    assert 'model_reasoning_effort="low"' in commands[0]
     assert commands[0][-1] == "-"
     assert "cinematic city" in prompts[0]

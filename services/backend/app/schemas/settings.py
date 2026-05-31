@@ -12,6 +12,10 @@ class SafeSettingsResponse(StrictBaseModel):
     codex_binary_path: str
     codex_default_model: str
     codex_model_options: list[str]
+    codex_default_reasoning_effort: str
+    codex_reasoning_effort_options: list[str]
+    codex_default_reasoning_summary: str
+    codex_default_verbosity: str | None
     codex_timeout_seconds: int
     run_codex_smoke: bool
     ollama_base_url: str
@@ -32,6 +36,10 @@ class SafeSettingsResponse(StrictBaseModel):
             codex_binary_path=settings.codex_binary_path,
             codex_default_model=settings.codex_default_model,
             codex_model_options=settings.codex_model_options,
+            codex_default_reasoning_effort=settings.codex_default_reasoning_effort,
+            codex_reasoning_effort_options=settings.codex_reasoning_effort_options,
+            codex_default_reasoning_summary=settings.codex_default_reasoning_summary,
+            codex_default_verbosity=settings.codex_default_verbosity,
             codex_timeout_seconds=settings.codex_timeout_seconds,
             run_codex_smoke=settings.run_codex_smoke,
             ollama_base_url=settings.ollama_base_url,

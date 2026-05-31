@@ -68,6 +68,16 @@ def _ensure_codex_provider(provider: str) -> None:
         )
 
 
+def _run_codex_agent(runner: CodexAgentRunner, prompt: str, payload) -> AgentTurnResponse:
+    return runner.run(
+        prompt,
+        model=payload.codex_model,
+        reasoning_effort=payload.codex_reasoning_effort,
+        reasoning_summary=payload.codex_reasoning_summary,
+        verbosity=payload.codex_verbosity,
+    )
+
+
 def _store_agent_turn(db, session_id: str, response: AgentTurnResponse) -> None:
     response_payload = AgentTurnAdapter.dump_python(response, mode="json")
     db.add(
@@ -238,9 +248,10 @@ def create_agent_turn(payload: AgentTurnRequest, request: Request) -> AgentTurnR
                 text=payload.original_prompt,
             )
         )
-        response = runner.run(
+        response = _run_codex_agent(
+            runner,
             build_questionnaire_prompt(payload),
-            model=payload.codex_model,
+            payload,
         )
         response = _ensure_unique_questionnaire_id(db, response)
         _store_agent_turn(db, payload.session_id, response)
@@ -284,9 +295,10 @@ def answer_questionnaire(
         )
 
         original_prompt = _get_latest_prompt_text(db, payload.session_id)
-        response = runner.run(
+        response = _run_codex_agent(
+            runner,
             build_optimization_prompt(original_prompt, questionnaire, payload),
-            model=payload.codex_model,
+            payload,
         )
         response = _ensure_unique_questionnaire_id(db, response)
         _store_agent_turn(db, payload.session_id, response)
@@ -319,14 +331,15 @@ def create_feedback_questionnaire(
 
         original_prompt = _get_latest_prompt_text(db, payload.session_id)
         optimized_prompt = _get_latest_optimized_prompt_text(db, payload.session_id)
-        response = runner.run(
+        response = _run_codex_agent(
+            runner,
             build_feedback_questionnaire_prompt(
                 original_prompt=original_prompt,
                 optimized_prompt=optimized_prompt,
                 generation_job=_generation_job_payload(job),
                 generated_images=_generated_image_payloads(images),
             ),
-            model=payload.codex_model,
+            payload,
         )
         response = _ensure_unique_questionnaire_id(db, response)
         _store_agent_turn(db, payload.session_id, response)
@@ -373,7 +386,8 @@ def refine_prompt_from_feedback(
 
         original_prompt = _get_latest_prompt_text(db, payload.session_id)
         previous_optimized_prompt = _get_latest_optimized_prompt_text(db, payload.session_id)
-        response = runner.run(
+        response = _run_codex_agent(
+            runner,
             build_feedback_refinement_prompt(
                 original_prompt=original_prompt,
                 previous_optimized_prompt=previous_optimized_prompt,
@@ -382,7 +396,7 @@ def refine_prompt_from_feedback(
                 generation_job=_generation_job_payload(job),
                 generated_images=_generated_image_payloads(images),
             ),
-            model=payload.codex_model,
+            payload,
         )
         response = _ensure_unique_questionnaire_id(db, response)
         _store_agent_turn(db, payload.session_id, response)

@@ -5,7 +5,10 @@ from app.providers.ollama.ollama_client import get_ollama_models, get_ollama_sta
 from app.schemas.base import StrictBaseModel
 from app.schemas.provider import (
     CodexModelsResponse,
+    CodexReasoningEffort,
+    CodexReasoningSummary,
     CodexStatusResponse,
+    CodexVerbosity,
     OllamaModelsResponse,
     OllamaStatusResponse,
 )
@@ -20,6 +23,13 @@ class CodexModelOptionsPatch(StrictBaseModel):
 
 class CodexDefaultModelPatch(StrictBaseModel):
     default_model: str
+
+
+class CodexRuntimeOptionsPatch(StrictBaseModel):
+    default_model: str | None = None
+    default_reasoning_effort: CodexReasoningEffort | None = None
+    default_reasoning_summary: CodexReasoningSummary | None = None
+    default_verbosity: CodexVerbosity | None = None
 
 
 class OllamaDefaultModelPatch(StrictBaseModel):
@@ -50,6 +60,48 @@ def normalize_model_options(options: list[str]) -> list[str]:
     return normalized
 
 
+def normalize_reasoning_effort_options(options: list[str]) -> list[CodexReasoningEffort]:
+    allowed = {"low", "medium", "high", "xhigh"}
+    normalized = []
+    seen = set()
+    for option in options:
+        value = option.strip()
+        if not value or value in seen:
+            continue
+        if value not in allowed:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "unknown_codex_reasoning_effort",
+                    "message": "Codex reasoning effort must be low, medium, high, or xhigh.",
+                },
+            )
+        normalized.append(value)
+        seen.add(value)
+    if not normalized:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "empty_codex_reasoning_effort_options",
+                "message": "Codex reasoning effort options must include at least one value.",
+            },
+        )
+    return normalized
+
+
+def codex_models_response(settings: Settings) -> CodexModelsResponse:
+    return CodexModelsResponse(
+        default_model=settings.codex_default_model,
+        model_options=settings.codex_model_options,
+        default_reasoning_effort=settings.codex_default_reasoning_effort,
+        reasoning_effort_options=normalize_reasoning_effort_options(
+            settings.codex_reasoning_effort_options
+        ),
+        default_reasoning_summary=settings.codex_default_reasoning_summary,
+        default_verbosity=settings.codex_default_verbosity,
+    )
+
+
 def select_ollama_model(settings: Settings, models: list[str]) -> str | None:
     if settings.ollama_selected_model in models:
         return settings.ollama_selected_model
@@ -64,10 +116,7 @@ def codex_status(request: Request) -> CodexStatusResponse:
 @router.get("/providers/codex/models", response_model=CodexModelsResponse)
 def codex_models(request: Request) -> CodexModelsResponse:
     settings = get_request_settings(request)
-    return CodexModelsResponse(
-        default_model=settings.codex_default_model,
-        model_options=settings.codex_model_options,
-    )
+    return codex_models_response(settings)
 
 
 @router.patch("/providers/codex/model-options", response_model=CodexModelsResponse)
@@ -79,10 +128,7 @@ def patch_codex_model_options(
     settings.codex_model_options = options
     if settings.codex_default_model not in options:
         settings.codex_default_model = options[0]
-    return CodexModelsResponse(
-        default_model=settings.codex_default_model,
-        model_options=settings.codex_model_options,
-    )
+    return codex_models_response(settings)
 
 
 @router.patch("/providers/codex/default-model", response_model=CodexModelsResponse)
@@ -108,10 +154,47 @@ def patch_codex_default_model(
             },
         )
     settings.codex_default_model = default_model
-    return CodexModelsResponse(
-        default_model=settings.codex_default_model,
-        model_options=settings.codex_model_options,
-    )
+    return codex_models_response(settings)
+
+
+@router.patch("/providers/codex/runtime-options", response_model=CodexModelsResponse)
+def patch_codex_runtime_options(
+    payload: CodexRuntimeOptionsPatch, request: Request
+) -> CodexModelsResponse:
+    settings = get_request_settings(request)
+    fields_set = payload.model_fields_set
+    if "default_model" in fields_set and payload.default_model is not None:
+        default_model = payload.default_model.strip()
+        if not default_model:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "empty_codex_default_model",
+                    "message": "Codex default model cannot be empty.",
+                },
+            )
+        if default_model not in settings.codex_model_options:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "unknown_codex_model",
+                    "message": "Codex default model must be one of the configured options.",
+                },
+            )
+        settings.codex_default_model = default_model
+    if (
+        "default_reasoning_effort" in fields_set
+        and payload.default_reasoning_effort is not None
+    ):
+        settings.codex_default_reasoning_effort = payload.default_reasoning_effort
+    if (
+        "default_reasoning_summary" in fields_set
+        and payload.default_reasoning_summary is not None
+    ):
+        settings.codex_default_reasoning_summary = payload.default_reasoning_summary
+    if "default_verbosity" in fields_set:
+        settings.codex_default_verbosity = payload.default_verbosity
+    return codex_models_response(settings)
 
 
 @router.get("/providers/ollama/status", response_model=OllamaStatusResponse)

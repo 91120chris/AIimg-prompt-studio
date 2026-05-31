@@ -27,10 +27,44 @@ def test_codex_model_options_patch_updates_in_memory_settings() -> None:
     )
 
     assert response.status_code == 200
-    assert response.json() == {
-        "default_model": "auto",
-        "model_options": ["auto", "custom"],
-    }
+    payload = response.json()
+    assert payload["default_model"] == "auto"
+    assert payload["model_options"] == ["auto", "custom"]
+    assert payload["default_reasoning_effort"] == "medium"
+    assert payload["reasoning_effort_options"] == ["low", "medium", "high", "xhigh"]
+
+
+def test_codex_runtime_options_patch_updates_reasoning_effort() -> None:
+    client = TestClient(create_app(Settings(_env_file=None)))
+
+    response = client.patch(
+        "/providers/codex/runtime-options",
+        json={
+            "default_model": "gpt-5.5",
+            "default_reasoning_effort": "xhigh",
+            "default_reasoning_summary": "concise",
+            "default_verbosity": "high",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["default_model"] == "gpt-5.5"
+    assert payload["default_reasoning_effort"] == "xhigh"
+    assert payload["default_reasoning_summary"] == "concise"
+    assert payload["default_verbosity"] == "high"
+
+
+def test_codex_runtime_options_patch_can_clear_verbosity() -> None:
+    client = TestClient(create_app(Settings(codex_default_verbosity="high", _env_file=None)))
+
+    response = client.patch(
+        "/providers/codex/runtime-options",
+        json={"default_verbosity": None},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["default_verbosity"] is None
 
 
 def test_secret_status_never_returns_secret_value() -> None:

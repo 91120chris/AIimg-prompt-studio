@@ -14,6 +14,9 @@ DEFAULT_CORS_ALLOW_ORIGINS = [
 ]
 
 DEFAULT_CODEX_MODEL_OPTIONS = ["auto", "gpt-5.5", "gpt-5.4"]
+DEFAULT_CODEX_REASONING_EFFORT_OPTIONS = ["low", "medium", "high", "xhigh"]
+DEFAULT_CODEX_REASONING_SUMMARY_OPTIONS = ["auto", "concise", "detailed", "none"]
+DEFAULT_CODEX_VERBOSITY_OPTIONS = ["low", "medium", "high"]
 
 
 def parse_csv(value: str | list[str] | None) -> list[str]:
@@ -50,6 +53,12 @@ class Settings(BaseSettings):
     codex_model_options: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: DEFAULT_CODEX_MODEL_OPTIONS.copy()
     )
+    codex_default_reasoning_effort: str = "medium"
+    codex_reasoning_effort_options: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: DEFAULT_CODEX_REASONING_EFFORT_OPTIONS.copy()
+    )
+    codex_default_reasoning_summary: str = "auto"
+    codex_default_verbosity: str | None = None
     codex_timeout_seconds: int = 300
     run_codex_smoke: bool = False
 
@@ -62,16 +71,46 @@ class Settings(BaseSettings):
 
     frontend_api_base_url: str = "http://127.0.0.1:8000"
 
-    @field_validator("cors_allow_origins", "codex_model_options", mode="before")
+    @field_validator(
+        "cors_allow_origins",
+        "codex_model_options",
+        "codex_reasoning_effort_options",
+        mode="before",
+    )
     @classmethod
     def parse_csv_fields(cls, value: str | list[str] | None) -> list[str]:
         return parse_csv(value)
+
+    @field_validator("codex_default_reasoning_effort")
+    @classmethod
+    def validate_codex_reasoning_effort(cls, value: str) -> str:
+        if value not in DEFAULT_CODEX_REASONING_EFFORT_OPTIONS:
+            allowed = ", ".join(DEFAULT_CODEX_REASONING_EFFORT_OPTIONS)
+            raise ValueError(f"CODEX_DEFAULT_REASONING_EFFORT must be one of: {allowed}")
+        return value
+
+    @field_validator("codex_default_reasoning_summary")
+    @classmethod
+    def validate_codex_reasoning_summary(cls, value: str) -> str:
+        if value not in DEFAULT_CODEX_REASONING_SUMMARY_OPTIONS:
+            allowed = ", ".join(DEFAULT_CODEX_REASONING_SUMMARY_OPTIONS)
+            raise ValueError(f"CODEX_DEFAULT_REASONING_SUMMARY must be one of: {allowed}")
+        return value
+
+    @field_validator("codex_default_verbosity")
+    @classmethod
+    def validate_codex_verbosity(cls, value: str | None) -> str | None:
+        if value is not None and value not in DEFAULT_CODEX_VERBOSITY_OPTIONS:
+            allowed = ", ".join(DEFAULT_CODEX_VERBOSITY_OPTIONS)
+            raise ValueError(f"CODEX_DEFAULT_VERBOSITY must be one of: {allowed}")
+        return value
 
     @field_validator(
         "database_url",
         "hf_token",
         "hf_home",
         "hf_hub_cache",
+        "codex_default_verbosity",
         "ollama_selected_model",
         mode="before",
     )

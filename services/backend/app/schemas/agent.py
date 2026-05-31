@@ -4,6 +4,7 @@ from pydantic import Field
 
 from app.schemas.base import StrictBaseModel
 from app.schemas.errors import StructuredError
+from app.schemas.provider import CodexReasoningEffort, CodexReasoningSummary, CodexVerbosity
 from app.schemas.questionnaire import Questionnaire
 from app.schemas.questionnaire_answers import QuestionnaireAnswerPayload
 
@@ -18,6 +19,9 @@ class AgentTurnRequest(StrictBaseModel):
     mode: WorkflowMode = "t2i"
     provider: AgentProvider = "codex_cli"
     codex_model: str | None = None
+    codex_reasoning_effort: CodexReasoningEffort | None = None
+    codex_reasoning_summary: CodexReasoningSummary | None = None
+    codex_verbosity: CodexVerbosity | None = None
     ollama_model: str | None = None
 
 
@@ -50,6 +54,9 @@ class ErrorTurnResponse(StrictBaseModel):
 class AgentQuestionnaireSubmitRequest(QuestionnaireAnswerPayload):
     provider: AgentProvider = "codex_cli"
     codex_model: str | None = None
+    codex_reasoning_effort: CodexReasoningEffort | None = None
+    codex_reasoning_summary: CodexReasoningSummary | None = None
+    codex_verbosity: CodexVerbosity | None = None
     ollama_model: str | None = None
 
 
@@ -58,6 +65,9 @@ class AgentFeedbackQuestionnaireRequest(StrictBaseModel):
     job_id: str
     provider: AgentProvider = "codex_cli"
     codex_model: str | None = None
+    codex_reasoning_effort: CodexReasoningEffort | None = None
+    codex_reasoning_summary: CodexReasoningSummary | None = None
+    codex_verbosity: CodexVerbosity | None = None
     ollama_model: str | None = None
 
 
@@ -65,6 +75,9 @@ class AgentRefineRequest(QuestionnaireAnswerPayload):
     job_id: str
     provider: AgentProvider = "codex_cli"
     codex_model: str | None = None
+    codex_reasoning_effort: CodexReasoningEffort | None = None
+    codex_reasoning_summary: CodexReasoningSummary | None = None
+    codex_verbosity: CodexVerbosity | None = None
     ollama_model: str | None = None
 
 

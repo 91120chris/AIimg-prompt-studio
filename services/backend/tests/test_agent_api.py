@@ -34,7 +34,15 @@ class FakeCodexRunner:
     def __init__(self, settings):
         self.settings = settings
 
-    def run(self, prompt: str, *, model: str | None = None):
+    def run(
+        self,
+        prompt: str,
+        *,
+        model: str | None = None,
+        reasoning_effort: str | None = None,
+        reasoning_summary: str | None = None,
+        verbosity: str | None = None,
+    ):
         self.prompts.append(prompt)
         self.models.append(model)
         return self.responses.pop(0)

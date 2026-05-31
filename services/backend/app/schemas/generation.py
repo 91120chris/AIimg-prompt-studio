@@ -2,6 +2,7 @@ from typing import Literal
 
 from app.schemas.base import StrictBaseModel
 from app.schemas.errors import StructuredError
+from app.schemas.provider import CodexReasoningEffort, CodexReasoningSummary, CodexVerbosity
 
 WorkflowMode = Literal["t2i", "i2i"]
 ImageProvider = Literal["codex_cli_gpt_image", "diffusers_flux2"]
@@ -22,6 +23,10 @@ class GenerationConfirmRequest(StrictBaseModel):
     optimized_prompt: str
     parameters: GenerationParameters
     reference_image_ids: list[str] = []
+    codex_model: str | None = None
+    codex_reasoning_effort: CodexReasoningEffort | None = None
+    codex_reasoning_summary: CodexReasoningSummary | None = None
+    codex_verbosity: CodexVerbosity | None = None
 
 
 class GenerationCancelRequest(StrictBaseModel):

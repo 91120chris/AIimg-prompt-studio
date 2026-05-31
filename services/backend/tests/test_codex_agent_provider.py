@@ -32,7 +32,7 @@ def test_codex_agent_runner_repairs_invalid_json_once(monkeypatch) -> None:
         return next(outputs)
 
     runner = CodexAgentRunner(Settings(_env_file=None), executor=fake_executor)
-    response = runner.run("請回覆 JSON。", model="gpt-5.5")
+    response = runner.run("請回覆 JSON。", model="gpt-5.5", reasoning_effort="high")
 
     assert response.kind == "message"
     assert response.message == "已修正"
@@ -40,6 +40,8 @@ def test_codex_agent_runner_repairs_invalid_json_once(monkeypatch) -> None:
     for command in commands:
         assert command.index("--ask-for-approval") < command.index("exec")
         assert command.index("--sandbox") < command.index("exec")
+        assert command.index("--config") < command.index("exec")
+        assert 'model_reasoning_effort="high"' in command
         assert command[command.index("--sandbox") + 1] == "read-only"
         assert command[-1] == "-"
     assert input_texts[0] == "請回覆 JSON。"

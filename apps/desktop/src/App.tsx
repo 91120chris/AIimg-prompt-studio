@@ -52,6 +52,10 @@ type QuestionnaireAnswerRequest =
 const fallbackCodexModels: CodexModelsResponse = {
   default_model: "auto",
   model_options: ["auto", "gpt-5.5", "gpt-5.4"],
+  default_reasoning_effort: "medium",
+  reasoning_effort_options: ["low", "medium", "high", "xhigh"],
+  default_reasoning_summary: "auto",
+  default_verbosity: null,
 };
 
 const fallbackOllamaModels: OllamaModelsResponse = {
@@ -366,6 +370,28 @@ function App() {
     }
   }
 
+  async function updateCodexRuntimeOptions(patch: Partial<CodexModelsResponse>) {
+    setCodexModels((current) => ({ ...current, ...patch }));
+    try {
+      const response = await fetch(`${backendBaseUrl}/providers/codex/runtime-options`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          default_model: patch.default_model,
+          default_reasoning_effort: patch.default_reasoning_effort,
+          default_reasoning_summary: patch.default_reasoning_summary,
+          default_verbosity: patch.default_verbosity,
+        }),
+      });
+      if (!response.ok) {
+        throw new Error(await readErrorMessage(response));
+      }
+      setCodexModels(codexModelsResponseSchema.parse(await response.json()));
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "無法更新 Codex 設定");
+    }
+  }
+
   async function updateOllamaDefaultModel(model: string) {
     const selectedModel = model || null;
     setOllamaModels((current) => ({ ...current, selected_model: selectedModel }));
@@ -565,6 +591,9 @@ function App() {
           mode: workflowMode,
           provider: agentProvider,
           codex_model: codexModels.default_model,
+          codex_reasoning_effort: codexModels.default_reasoning_effort,
+          codex_reasoning_summary: codexModels.default_reasoning_summary,
+          codex_verbosity: codexModels.default_verbosity,
           ollama_model: ollamaModels.selected_model,
         }),
       });
@@ -608,6 +637,9 @@ function App() {
             ...(isFeedbackQuestionnaire ? { job_id: feedbackQuestionnaireContext.jobId } : {}),
             provider: agentProvider,
             codex_model: codexModels.default_model,
+            codex_reasoning_effort: codexModels.default_reasoning_effort,
+            codex_reasoning_summary: codexModels.default_reasoning_summary,
+            codex_verbosity: codexModels.default_verbosity,
             ollama_model: ollamaModels.selected_model,
             answers,
           }),
@@ -643,6 +675,9 @@ function App() {
           job_id: job.job_id,
           provider: agentProvider,
           codex_model: codexModels.default_model,
+          codex_reasoning_effort: codexModels.default_reasoning_effort,
+          codex_reasoning_summary: codexModels.default_reasoning_summary,
+          codex_verbosity: codexModels.default_verbosity,
           ollama_model: ollamaModels.selected_model,
         }),
       });
@@ -694,6 +729,10 @@ function App() {
             seed: seedValue === null ? null : Number.isFinite(seedValue) ? seedValue : null,
           },
           reference_image_ids: referenceImages.map((image) => image.reference_image_id),
+          codex_model: codexModels.default_model,
+          codex_reasoning_effort: codexModels.default_reasoning_effort,
+          codex_reasoning_summary: codexModels.default_reasoning_summary,
+          codex_verbosity: codexModels.default_verbosity,
         }),
       });
       if (!response.ok) {
@@ -948,6 +987,24 @@ function App() {
             </select>
           </label>
           <label>
+            思考強度
+            <select
+              value={codexModels.default_reasoning_effort}
+              onChange={(event) => {
+                void updateCodexRuntimeOptions({
+                  default_reasoning_effort: event.target
+                    .value as CodexModelsResponse["default_reasoning_effort"],
+                });
+              }}
+            >
+              {codexModels.reasoning_effort_options.map((effort) => (
+                <option key={effort} value={effort}>
+                  {effort}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
             Ollama 模型
             <select
               value={ollamaModels.selected_model ?? ""}
@@ -1087,6 +1144,12 @@ function App() {
               <div className="message message-agent">
                 <span>Agent</span>
                 <p>{agentMessage}</p>
+              </div>
+            ) : null}
+            {errorMessage ? (
+              <div className="message message-error">
+                <span>錯誤詳情</span>
+                <p>{errorMessage}</p>
               </div>
             ) : null}
             {agentTurn?.kind === "questionnaire" ? (
@@ -1479,6 +1542,62 @@ function App() {
                     {codexModels.model_options.map((model) => (
                       <option key={model} value={model}>
                         {model}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  思考強度
+                  <select
+                    value={codexModels.default_reasoning_effort}
+                    onChange={(event) => {
+                      void updateCodexRuntimeOptions({
+                        default_reasoning_effort: event.target
+                          .value as CodexModelsResponse["default_reasoning_effort"],
+                      });
+                    }}
+                  >
+                    {codexModels.reasoning_effort_options.map((effort) => (
+                      <option key={effort} value={effort}>
+                        {effort}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  推理摘要
+                  <select
+                    value={codexModels.default_reasoning_summary}
+                    onChange={(event) => {
+                      void updateCodexRuntimeOptions({
+                        default_reasoning_summary: event.target
+                          .value as CodexModelsResponse["default_reasoning_summary"],
+                      });
+                    }}
+                  >
+                    {["auto", "concise", "detailed", "none"].map((summary) => (
+                      <option key={summary} value={summary}>
+                        {summary}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  輸出詳細度
+                  <select
+                    value={codexModels.default_verbosity ?? ""}
+                    onChange={(event) => {
+                      void updateCodexRuntimeOptions({
+                        default_verbosity: event.target.value
+                          ? (event.target.value as NonNullable<CodexModelsResponse["default_verbosity"]>)
+                          : null,
+                      });
+                    }}
+                  >
+                    <option value="">default</option>
+                    {["low", "medium", "high"].map((verbosity) => (
+                      <option key={verbosity} value={verbosity}>
+                        {verbosity}
                       </option>
                     ))}
                   </select>

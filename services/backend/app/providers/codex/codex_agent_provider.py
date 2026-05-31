@@ -11,6 +11,7 @@ from app.providers.codex.codex_binary_resolver import resolve_codex_binary
 from app.providers.codex.codex_command_builder import build_codex_exec_command
 from app.schemas.agent import AgentTurnResponse, ErrorTurnResponse
 from app.schemas.errors import StructuredError
+from app.schemas.provider import CodexReasoningEffort, CodexReasoningSummary, CodexVerbosity
 from app.settings import Settings
 
 
@@ -56,7 +57,15 @@ class CodexAgentRunner:
     settings: Settings
     executor: CommandExecutor = default_command_executor
 
-    def run(self, prompt: str, *, model: str | None = None) -> AgentTurnResponse:
+    def run(
+        self,
+        prompt: str,
+        *,
+        model: str | None = None,
+        reasoning_effort: CodexReasoningEffort | None = None,
+        reasoning_summary: CodexReasoningSummary | None = None,
+        verbosity: CodexVerbosity | None = None,
+    ) -> AgentTurnResponse:
         binary = resolve_codex_binary(self.settings.codex_binary_path)
         if not binary.available:
             return _error_response(
@@ -66,6 +75,12 @@ class CodexAgentRunner:
             )
 
         selected_model = model or self.settings.codex_default_model
+        config_overrides = codex_config_overrides(
+            self.settings,
+            reasoning_effort=reasoning_effort,
+            reasoning_summary=reasoning_summary,
+            verbosity=verbosity,
+        )
         schema_path = schema_output_dir() / "agent_turn_response.schema.json"
 
         try:
@@ -76,6 +91,7 @@ class CodexAgentRunner:
                     model=selected_model,
                     sandbox="read-only",
                     output_schema_path=schema_path,
+                    config_overrides=config_overrides,
                 ),
                 self.settings.codex_timeout_seconds,
                 prompt,
@@ -91,6 +107,7 @@ class CodexAgentRunner:
                         model=selected_model,
                         sandbox="read-only",
                         output_schema_path=schema_path,
+                        config_overrides=config_overrides,
                     ),
                     self.settings.codex_timeout_seconds,
                     repair_prompt,
@@ -115,6 +132,23 @@ class CodexAgentRunner:
             )
         except CodexAgentProviderError as error:
             return ErrorTurnResponse(kind="error", error=error.error)
+
+
+def codex_config_overrides(
+    settings: Settings,
+    *,
+    reasoning_effort: CodexReasoningEffort | None = None,
+    reasoning_summary: CodexReasoningSummary | None = None,
+    verbosity: CodexVerbosity | None = None,
+) -> dict[str, str]:
+    overrides = {
+        "model_reasoning_effort": reasoning_effort or settings.codex_default_reasoning_effort,
+        "model_reasoning_summary": reasoning_summary or settings.codex_default_reasoning_summary,
+    }
+    selected_verbosity = verbosity or settings.codex_default_verbosity
+    if selected_verbosity:
+        overrides["model_verbosity"] = selected_verbosity
+    return overrides
 
 
 def parse_agent_turn_response(raw_output: str) -> AgentTurnResponse:

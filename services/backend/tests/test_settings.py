@@ -30,6 +30,15 @@ def test_codex_model_options_parses_csv_with_whitespace() -> None:
     assert settings.codex_model_options == ["auto", "gpt-5.5", "custom"]
 
 
+def test_codex_reasoning_effort_options_parses_csv_with_whitespace() -> None:
+    settings = Settings(
+        codex_reasoning_effort_options="low, medium , high, xhigh",
+        _env_file=None,
+    )
+
+    assert settings.codex_reasoning_effort_options == ["low", "medium", "high", "xhigh"]
+
+
 def test_safe_settings_response_does_not_include_hf_token() -> None:
     secret = "hf_secret_should_not_appear"
     safe_settings = SafeSettingsResponse.from_settings(Settings(hf_token=secret, _env_file=None))

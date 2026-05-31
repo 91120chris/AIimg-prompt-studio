@@ -23,7 +23,10 @@ from app.schemas.generation import (
 )
 from app.schemas.provider import (
     CodexModelsResponse,
+    CodexReasoningEffort,
+    CodexReasoningSummary,
     CodexStatusResponse,
+    CodexVerbosity,
     OllamaModelsResponse,
     OllamaStatusResponse,
 )
@@ -59,7 +62,10 @@ __all__ = [
     "ChoiceQuestionnaireAnswer",
     "CodexImageResponse",
     "CodexModelsResponse",
+    "CodexReasoningEffort",
+    "CodexReasoningSummary",
     "CodexStatusResponse",
+    "CodexVerbosity",
     "ErrorTurnResponse",
     "GeneratedImageResponse",
     "GenerationImage",

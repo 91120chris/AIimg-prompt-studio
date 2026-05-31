@@ -20,6 +20,12 @@ export const codexStatusResponseSchema = z.object({
 export const codexModelsResponseSchema = z.object({
   default_model: z.string(),
   model_options: z.array(z.string()),
+  default_reasoning_effort: z.enum(["low", "medium", "high", "xhigh"]).default("medium"),
+  reasoning_effort_options: z
+    .array(z.enum(["low", "medium", "high", "xhigh"]))
+    .default(["low", "medium", "high", "xhigh"]),
+  default_reasoning_summary: z.enum(["auto", "concise", "detailed", "none"]).default("auto"),
+  default_verbosity: z.enum(["low", "medium", "high"]).nullable().default(null),
 });
 
 export const ollamaStatusResponseSchema = z.object({

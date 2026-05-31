@@ -11,7 +11,7 @@ from app.core.image_records import register_generated_image
 from app.core.json_schema import schema_output_dir
 from app.core.session_workspace import ensure_path_inside_session, ensure_session_workspace
 from app.db.models import GeneratedImageRecord, GenerationJobRecord, ReferenceImageRecord
-from app.providers.codex.codex_agent_provider import _extract_json_object
+from app.providers.codex.codex_agent_provider import _extract_json_object, codex_config_overrides
 from app.providers.codex.codex_binary_resolver import resolve_codex_binary
 from app.providers.codex.codex_command_builder import build_codex_image_exec_command
 from app.schemas.errors import StructuredError
@@ -93,11 +93,17 @@ class CodexImageProvider:
                 build_codex_image_exec_command(
                     binary,
                     "-",
-                    model=self.settings.codex_default_model,
+                    model=payload.codex_model or self.settings.codex_default_model,
                     sandbox="workspace-write",
                     skip_git_repo_check=True,
                     output_schema_path=schema_path,
                     reference_image_paths=reference_paths,
+                    config_overrides=codex_config_overrides(
+                        self.settings,
+                        reasoning_effort=payload.codex_reasoning_effort,
+                        reasoning_summary=payload.codex_reasoning_summary,
+                        verbosity=payload.codex_verbosity,
+                    ),
                 ),
                 self.settings.codex_timeout_seconds,
                 prompt,

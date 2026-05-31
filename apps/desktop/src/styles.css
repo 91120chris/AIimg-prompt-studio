@@ -170,7 +170,7 @@ p {
 
 .toolbar {
   display: grid;
-  grid-template-columns: repeat(6, minmax(76px, 1fr));
+  grid-template-columns: repeat(7, minmax(72px, 1fr));
   gap: 8px;
   min-width: 0;
 }
@@ -357,6 +357,20 @@ p {
 
 .message-status span {
   color: #645433;
+}
+
+.message-error {
+  border: 1px solid #f0b4ae;
+  background: #fff1ef;
+}
+
+.message-error span {
+  color: #9d261d;
+}
+
+.message-error p {
+  color: #6d2b24;
+  overflow-wrap: anywhere;
 }
 
 .provider-grid {

@@ -13,6 +13,7 @@ import {
   type AgentTurnResponse,
   type CodexModelsResponse,
   type CodexStatusResponse,
+  type GenerationJobResponse,
   type HealthResponse,
   type OllamaModelsResponse,
   type OllamaStatusResponse,
@@ -24,6 +25,7 @@ import {
   agentTurnResponseSchema,
   codexModelsResponseSchema,
   codexStatusResponseSchema,
+  generationJobResponseSchema,
   healthResponseSchema,
   ollamaModelsResponseSchema,
   ollamaStatusResponseSchema,
@@ -197,6 +199,9 @@ function App() {
   const [answerDrafts, setAnswerDrafts] = useState<AnswerDrafts>({});
   const [agentBusy, setAgentBusy] = useState(false);
   const [agentMessage, setAgentMessage] = useState<string | null>(null);
+  const [generationJob, setGenerationJob] = useState<GenerationJobResponse | null>(null);
+  const [generationBusy, setGenerationBusy] = useState(false);
+  const [generationMessage, setGenerationMessage] = useState<string | null>(null);
 
   useEffect(() => {
     setCodexOptionsDraft(codexModels.model_options.join(", "));
@@ -482,6 +487,74 @@ function App() {
       setErrorMessage(error instanceof Error ? error.message : "無法送出問卷答案");
     } finally {
       setAgentBusy(false);
+    }
+  }
+
+  async function confirmGeneration() {
+    if (!optimizedPrompt.trim()) {
+      setErrorMessage("請先取得最佳化 Prompt。");
+      return;
+    }
+
+    setGenerationBusy(true);
+    setGenerationMessage("正在建立生成工作...");
+    setErrorMessage(null);
+    try {
+      const session = await ensureSession();
+      const seedValue = seed.trim() ? Number(seed.trim()) : null;
+      const response = await fetch(`${backendBaseUrl}/generation/confirm`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          session_id: session.session_id,
+          provider: imageProvider,
+          mode: workflowMode,
+          original_prompt: originalPrompt,
+          optimized_prompt: optimizedPrompt,
+          parameters: {
+            steps,
+            guidance,
+            seed: seedValue === null ? null : Number.isFinite(seedValue) ? seedValue : null,
+          },
+          reference_image_ids: referenceImages.map((image) => image.reference_image_id),
+        }),
+      });
+      if (!response.ok) {
+        throw new Error(await readErrorMessage(response));
+      }
+      const job = generationJobResponseSchema.parse(await response.json());
+      setGenerationJob(job);
+      setGenerationMessage(`生成工作已建立：${job.status}`);
+    } catch (error) {
+      setGenerationMessage("建立生成工作失敗");
+      setErrorMessage(error instanceof Error ? error.message : "無法建立生成工作");
+    } finally {
+      setGenerationBusy(false);
+    }
+  }
+
+  async function cancelGeneration() {
+    if (!generationJob) {
+      return;
+    }
+    setGenerationBusy(true);
+    setErrorMessage(null);
+    try {
+      const response = await fetch(`${backendBaseUrl}/generation/cancel`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ job_id: generationJob.job_id }),
+      });
+      if (!response.ok) {
+        throw new Error(await readErrorMessage(response));
+      }
+      const job = generationJobResponseSchema.parse(await response.json());
+      setGenerationJob(job);
+      setGenerationMessage(`生成工作狀態：${job.status}`);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "無法取消生成工作");
+    } finally {
+      setGenerationBusy(false);
     }
   }
 
@@ -990,6 +1063,12 @@ function App() {
               <p>
                 {workflowMode.toUpperCase()} / {imageProvider} / Seed {seed || "隨機"}
               </p>
+              {generationMessage ? <p className="generation-note">{generationMessage}</p> : null}
+              {generationJob ? (
+                <p className="generation-note">
+                  Job {generationJob.job_id} / {generationJob.status}
+                </p>
+              ) : null}
             </div>
             <div className="workflow-actions">
               <button
@@ -1002,9 +1081,31 @@ function App() {
               >
                 {agentBusy ? "Agent 執行中" : "分析提示"}
               </button>
-              <button type="button" disabled>
-                等待 1C 生成
+              <button
+                type="button"
+                disabled={
+                  generationBusy ||
+                  backendStatus !== "connected" ||
+                  !optimizedPrompt.trim() ||
+                  imageProvider !== "codex_cli_gpt_image"
+                }
+                onClick={() => {
+                  void confirmGeneration();
+                }}
+              >
+                {generationBusy ? "建立中" : "確認生成"}
               </button>
+              {generationJob && generationJob.status === "queued" ? (
+                <button
+                  type="button"
+                  disabled={generationBusy}
+                  onClick={() => {
+                    void cancelGeneration();
+                  }}
+                >
+                  取消
+                </button>
+              ) : null}
             </div>
           </div>
         </section>
@@ -1017,8 +1118,12 @@ function App() {
           <div className="image-stage">
             <div className="image-placeholder">
               <span />
-              <strong>尚未生成圖片</strong>
-              <p>完成問卷並確認生成後，結果會出現在這裡。</p>
+              <strong>{generationJob ? `生成工作：${generationJob.status}` : "尚未生成圖片"}</strong>
+              <p>
+                {generationJob
+                  ? "1C 已建立確認生成的安全工作骨架，實際 Codex 圖片輸出會接在下一步。"
+                  : "完成問卷並確認生成後，結果會出現在這裡。"}
+              </p>
             </div>
           </div>
         </aside>

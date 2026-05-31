@@ -160,6 +160,17 @@ export const generatedImageResponseSchema = z.object({
   created_at: z.string(),
 });
 
+export const generationJobResponseSchema = z.object({
+  job_id: z.string(),
+  session_id: z.string(),
+  provider: z.string(),
+  mode: z.string(),
+  status: z.enum(["queued", "running", "succeeded", "failed", "cancelled"]),
+  images: z.array(generatedImageResponseSchema),
+  error: structuredErrorSchema.nullable(),
+  created_at: z.string(),
+});
+
 export const sessionResponseSchema = z.object({
   session_id: z.string(),
   title: z.string().nullable(),
@@ -175,6 +186,7 @@ export type OllamaStatusResponse = z.infer<typeof ollamaStatusResponseSchema>;
 export type OllamaModelsResponse = z.infer<typeof ollamaModelsResponseSchema>;
 export type SecretStatusResponse = z.infer<typeof secretStatusResponseSchema>;
 export type AgentTurnResponse = z.infer<typeof agentTurnResponseSchema>;
+export type GenerationJobResponse = z.infer<typeof generationJobResponseSchema>;
 export type Question = z.infer<typeof questionSchema>;
 export type Questionnaire = z.infer<typeof questionnaireSchema>;
 export type ReferenceImageResponse = z.infer<typeof referenceImageResponseSchema>;

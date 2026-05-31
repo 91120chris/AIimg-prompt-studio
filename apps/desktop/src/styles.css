@@ -664,6 +664,12 @@ p {
   gap: 8px;
 }
 
+.generation-note {
+  margin-top: 4px;
+  color: #405768;
+  overflow-wrap: anywhere;
+}
+
 .image-stage {
   display: grid;
   min-height: 0;

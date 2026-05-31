@@ -179,6 +179,8 @@ export const sessionResponseSchema = z.object({
   generated_images: z.array(generatedImageResponseSchema),
 });
 
+export const sessionsResponseSchema = z.array(sessionResponseSchema);
+
 export type HealthResponse = z.infer<typeof healthResponseSchema>;
 export type CodexStatusResponse = z.infer<typeof codexStatusResponseSchema>;
 export type CodexModelsResponse = z.infer<typeof codexModelsResponseSchema>;

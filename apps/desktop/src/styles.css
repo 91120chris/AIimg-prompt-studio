@@ -584,6 +584,7 @@ p {
 .generation-panel button:not(:disabled):hover,
 .session-button:hover,
 .command-button:hover,
+.history-session:hover,
 .reference-upload:hover {
   border-color: var(--border-strong);
   background: #f3f7f8;
@@ -818,6 +819,49 @@ p {
 
 .settings-section:last-child {
   border-bottom: 0;
+}
+
+.history-list {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.history-session {
+  display: grid;
+  justify-items: start;
+  gap: 4px;
+  width: 100%;
+  min-height: 72px;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #243442;
+  padding: 10px;
+  text-align: left;
+}
+
+.history-session.is-active {
+  border-color: #1f7a5a;
+  background: #eef8f3;
+}
+
+.history-session strong {
+  max-width: 100%;
+  overflow: hidden;
+  color: #17202a;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-session span,
+.history-session small {
+  max-width: 100%;
+  overflow: hidden;
+  color: #61717f;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .command-button {

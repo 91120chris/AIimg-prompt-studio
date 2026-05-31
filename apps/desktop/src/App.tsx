@@ -32,6 +32,7 @@ import {
   referenceImageResponseSchema,
   secretStatusResponseSchema,
   sessionResponseSchema,
+  sessionsResponseSchema,
 } from "./schemas/api.ts";
 
 type BackendStatus = "checking" | "connected" | "disconnected";
@@ -93,6 +94,19 @@ function statusText(value: boolean | undefined): string {
     return "不可用";
   }
   return "檢查中";
+}
+
+function formatSessionTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return new Intl.DateTimeFormat("zh-TW", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
 }
 
 function defaultDraftsForQuestionnaire(questionnaire: Questionnaire): AnswerDrafts {
@@ -173,6 +187,9 @@ function App() {
   const settingsTriggerRef = useRef<HTMLButtonElement | null>(null);
   const settingsCloseRef = useRef<HTMLButtonElement | null>(null);
   const settingsDrawerRef = useRef<HTMLElement | null>(null);
+  const historyTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const historyCloseRef = useRef<HTMLButtonElement | null>(null);
+  const historyDrawerRef = useRef<HTMLElement | null>(null);
   const [workflowMode, setWorkflowMode] = useState<WorkflowMode>("t2i");
   const [agentProvider, setAgentProvider] = useState<AgentProvider>("codex_cli");
   const [imageProvider, setImageProvider] = useState<ImageProvider>("codex_cli_gpt_image");
@@ -182,10 +199,14 @@ function App() {
   const [originalPrompt, setOriginalPrompt] = useState("");
   const [optimizedPrompt, setOptimizedPrompt] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [codexOptionsDraft, setCodexOptionsDraft] = useState(
     fallbackCodexModels.model_options.join(", "),
   );
   const [settingsMessage, setSettingsMessage] = useState<string | null>(null);
+  const [historyMessage, setHistoryMessage] = useState<string | null>(null);
+  const [historyBusy, setHistoryBusy] = useState(false);
+  const [sessionHistory, setSessionHistory] = useState<SessionResponse[]>([]);
   const [backendStatus, setBackendStatus] = useState<BackendStatus>("checking");
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [codexStatus, setCodexStatus] = useState<CodexStatusResponse | null>(null);
@@ -269,6 +290,65 @@ function App() {
     };
   }, [settingsOpen]);
 
+  useEffect(() => {
+    if (!historyOpen) {
+      return;
+    }
+
+    const previousFocus =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : historyTriggerRef.current;
+
+    window.setTimeout(() => {
+      historyCloseRef.current?.focus();
+    }, 0);
+
+    function handleDrawerKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setHistoryOpen(false);
+        return;
+      }
+
+      if (event.key !== "Tab") {
+        return;
+      }
+
+      const drawer = historyDrawerRef.current;
+      if (!drawer) {
+        return;
+      }
+
+      const focusable = Array.from(
+        drawer.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((element) => element.offsetParent !== null);
+
+      if (focusable.length === 0) {
+        return;
+      }
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+
+    window.addEventListener("keydown", handleDrawerKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleDrawerKeyDown);
+      previousFocus?.focus();
+    };
+  }, [historyOpen]);
+
   async function updateCodexDefaultModel(model: string) {
     setCodexModels((current) => ({ ...current, default_model: model }));
     try {
@@ -351,6 +431,46 @@ function App() {
       setSettingsMessage("Codex 模型清單已儲存");
     } catch (error) {
       setSettingsMessage(error instanceof Error ? error.message : "儲存失敗");
+    }
+  }
+
+  async function refreshSessionHistory() {
+    setHistoryBusy(true);
+    setHistoryMessage(null);
+    try {
+      const sessions = await fetchJson("/sessions", sessionsResponseSchema);
+      setSessionHistory(sessions);
+      setHistoryMessage(`已載入 ${sessions.length} 個工作階段`);
+    } catch (error) {
+      setHistoryMessage(error instanceof Error ? error.message : "無法載入歷史紀錄");
+    } finally {
+      setHistoryBusy(false);
+    }
+  }
+
+  async function openHistoryDrawer() {
+    setSettingsOpen(false);
+    setHistoryOpen(true);
+    await refreshSessionHistory();
+  }
+
+  async function loadSession(sessionId: string) {
+    setHistoryBusy(true);
+    setHistoryMessage(null);
+    try {
+      const session = await fetchJson(`/sessions/${sessionId}`, sessionResponseSchema);
+      setCurrentSession(session);
+      setReferenceImages(session.reference_images);
+      setGenerationJob(null);
+      setFeedbackQuestionnaireContext(null);
+      setAgentTurn(null);
+      setAnswerDrafts({});
+      setAgentMessage(`已載入工作階段 ${session.session_id}`);
+      setHistoryOpen(false);
+    } catch (error) {
+      setHistoryMessage(error instanceof Error ? error.message : "無法載入工作階段");
+    } finally {
+      setHistoryBusy(false);
     }
   }
 
@@ -690,7 +810,7 @@ function App() {
     return "後端未連線";
   }, [backendStatus]);
 
-  const generatedPreviewImage = generationJob?.images[0] ?? null;
+  const generatedPreviewImage = generationJob?.images[0] ?? currentSession?.generated_images[0] ?? null;
 
   function setAnswerDraft(questionId: string, value: AnswerDraftValue) {
     setAnswerDrafts((current) => ({ ...current, [questionId]: value }));
@@ -879,7 +999,18 @@ function App() {
             <span aria-hidden="true" />
             {statusLabel}
           </div>
-          <button className="icon-button" type="button" title="歷史" aria-label="歷史紀錄">
+          <button
+            ref={historyTriggerRef}
+            className="icon-button"
+            type="button"
+            title="歷史"
+            aria-label="開啟歷史紀錄"
+            aria-haspopup="dialog"
+            aria-expanded={historyOpen}
+            onClick={() => {
+              void openHistoryDrawer();
+            }}
+          >
             <History size={17} aria-hidden="true" />
           </button>
           <button className="icon-button" type="button" title="模型" aria-label="模型狀態">
@@ -893,7 +1024,10 @@ function App() {
             aria-label="開啟設定"
             aria-haspopup="dialog"
             aria-expanded={settingsOpen}
-            onClick={() => setSettingsOpen(true)}
+            onClick={() => {
+              setHistoryOpen(false);
+              setSettingsOpen(true);
+            }}
           >
             <SettingsIcon size={17} aria-hidden="true" />
           </button>
@@ -1194,7 +1328,7 @@ function App() {
                   <strong>{generatedPreviewImage.filename}</strong>
                   <p>
                     {generatedPreviewImage.width} x {generatedPreviewImage.height} /{" "}
-                    {generationJob?.status}
+                    {generationJob?.status ?? "history"}
                   </p>
                 </div>
               </div>
@@ -1212,6 +1346,92 @@ function App() {
           </div>
         </aside>
       </section>
+
+      {historyOpen ? (
+        <div className="drawer-layer" role="presentation">
+          <button
+            className="drawer-scrim"
+            type="button"
+            aria-label="關閉歷史紀錄"
+            onClick={() => setHistoryOpen(false)}
+          />
+          <aside
+            ref={historyDrawerRef}
+            className="settings-drawer"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="history-title"
+          >
+            <header className="drawer-header">
+              <div>
+                <span>History</span>
+                <h2 id="history-title">工作階段歷史</h2>
+              </div>
+              <button
+                ref={historyCloseRef}
+                className="icon-button"
+                type="button"
+                title="關閉"
+                aria-label="關閉歷史紀錄"
+                onClick={() => setHistoryOpen(false)}
+              >
+                <X size={18} aria-hidden="true" />
+              </button>
+            </header>
+
+            <div className="drawer-content">
+              <section className="settings-section">
+                <h3>Session</h3>
+                <button
+                  className="command-button"
+                  type="button"
+                  disabled={historyBusy}
+                  onClick={() => {
+                    void refreshSessionHistory();
+                  }}
+                >
+                  <RefreshCcw size={16} aria-hidden="true" />
+                  重新整理
+                </button>
+                <div className="history-list" aria-label="工作階段清單">
+                  {sessionHistory.length === 0 ? (
+                    <p>{historyBusy ? "正在載入..." : "尚無歷史工作階段"}</p>
+                  ) : (
+                    sessionHistory.map((session) => (
+                      <button
+                        className={`history-session${
+                          currentSession?.session_id === session.session_id ? " is-active" : ""
+                        }`}
+                        type="button"
+                        key={session.session_id}
+                        disabled={historyBusy}
+                        onClick={() => {
+                          void loadSession(session.session_id);
+                        }}
+                      >
+                        <strong>{session.title ?? "未命名工作階段"}</strong>
+                        <span>
+                          {formatSessionTime(session.created_at)} /{" "}
+                          {session.reference_images.length} 參考 /{" "}
+                          {session.generated_images.length} 生成
+                        </span>
+                        <small>{session.session_id}</small>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </section>
+            </div>
+
+            <footer className="drawer-footer">
+              <History size={16} aria-hidden="true" />
+              <span aria-live="polite" aria-atomic="true">
+                {historyMessage ?? "選取一個工作階段即可載入參考圖與生成結果"}
+              </span>
+            </footer>
+          </aside>
+        </div>
+      ) : null}
 
       {settingsOpen ? (
         <div className="drawer-layer" role="presentation">

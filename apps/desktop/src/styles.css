@@ -919,6 +919,13 @@ p {
   color: #17202a;
 }
 
+.manager-path-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  min-width: 0;
+}
+
 .manager-actions {
   display: flex;
   flex-wrap: wrap;

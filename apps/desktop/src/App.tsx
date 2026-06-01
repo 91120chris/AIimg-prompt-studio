@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Database,
+  FolderOpen,
   History,
   RefreshCcw,
   Save,
@@ -61,6 +62,12 @@ type QuestionnaireAnswerRequest =
   | { kind: "boolean"; question_id: string; value: boolean }
   | { kind: "scale"; question_id: string; value: number };
 
+declare global {
+  interface Window {
+    __TAURI_INTERNALS__?: unknown;
+  }
+}
+
 const fallbackCodexModels: CodexModelsResponse = {
   default_model: "auto",
   model_options: ["auto", "gpt-5.5", "gpt-5.4"],
@@ -102,6 +109,10 @@ async function readErrorMessage(response: Response): Promise<string> {
     // Fall back to HTTP status below when the backend did not send JSON.
   }
   return `HTTP ${response.status}`;
+}
+
+function isTauriRuntime(): boolean {
+  return typeof window !== "undefined" && window.__TAURI_INTERNALS__ !== undefined;
 }
 
 function statusText(value: boolean | undefined): string {
@@ -237,6 +248,7 @@ function App() {
   const [fluxReadiness, setFluxReadiness] = useState<FluxReadinessResponse | null>(null);
   const [fluxPathDraft, setFluxPathDraft] = useState("");
   const [managerActionBusy, setManagerActionBusy] = useState<FluxManagerAction | null>(null);
+  const [managerPathPickerBusy, setManagerPathPickerBusy] = useState(false);
   const [backendStatus, setBackendStatus] = useState<BackendStatus>("checking");
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [codexStatus, setCodexStatus] = useState<CodexStatusResponse | null>(null);
@@ -620,6 +632,41 @@ function App() {
       }
       return current.map((model) => (model.provider === nextModel.provider ? nextModel : model));
     });
+  }
+
+  async function chooseFluxModelPath() {
+    if (!isTauriRuntime()) {
+      setManagerMessage("資料夾選擇器只在 Tauri 桌面版可用；目前瀏覽器預覽請手動貼上路徑。");
+      return;
+    }
+
+    setManagerPathPickerBusy(true);
+    setManagerMessage(null);
+    try {
+      const { open } = await import("@tauri-apps/plugin-dialog");
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: "選擇 FLUX 模型資料夾",
+        defaultPath: fluxPathDraft.trim() || undefined,
+      });
+
+      if (typeof selected === "string") {
+        setFluxPathDraft(selected);
+        setManagerMessage("已選擇 FLUX 模型路徑，請按儲存路徑。");
+        return;
+      }
+      if (Array.isArray(selected) && typeof selected[0] === "string") {
+        setFluxPathDraft(selected[0]);
+        setManagerMessage("已選擇 FLUX 模型路徑，請按儲存路徑。");
+        return;
+      }
+      setManagerMessage("已取消選擇路徑。");
+    } catch {
+      setManagerMessage("無法開啟資料夾選擇器；目前可手動輸入或貼上路徑。");
+    } finally {
+      setManagerPathPickerBusy(false);
+    }
   }
 
   async function runFluxManagerAction(action: FluxManagerAction) {
@@ -1785,11 +1832,24 @@ function App() {
                   </div>
                   <label>
                     本機模型路徑
-                    <input
-                      value={fluxPathDraft}
-                      placeholder="例如 C:\models\flux2-klein-fp8"
-                      onChange={(event) => setFluxPathDraft(event.target.value)}
-                    />
+                    <div className="manager-path-row">
+                      <input
+                        value={fluxPathDraft}
+                        placeholder="例如 C:\\models\\flux2-klein-fp8"
+                        onChange={(event) => setFluxPathDraft(event.target.value)}
+                      />
+                      <button
+                        className="command-button"
+                        type="button"
+                        disabled={managerBusy || managerActionBusy !== null || managerPathPickerBusy}
+                        onClick={() => {
+                          void chooseFluxModelPath();
+                        }}
+                      >
+                        <FolderOpen size={16} aria-hidden="true" />
+                        {managerPathPickerBusy ? "開啟中" : "選擇"}
+                      </button>
+                    </div>
                   </label>
                   <div className="manager-actions" aria-label="FLUX 模型操作">
                     <button

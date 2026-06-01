@@ -10,6 +10,7 @@ def test_tauri_shell_required_files_exist() -> None:
         "apps/desktop/src-tauri/build.rs",
         "apps/desktop/src-tauri/capabilities/default.json",
         "apps/desktop/src-tauri/tauri.conf.json",
+        "apps/desktop/src-tauri/src/lib.rs",
         "apps/desktop/src-tauri/src/main.rs",
     ]
 
@@ -21,11 +22,13 @@ def test_tauri_shell_required_files_exist() -> None:
 
 def test_tauri_dialog_plugin_is_configured() -> None:
     cargo_toml = (ROOT / "apps/desktop/src-tauri/Cargo.toml").read_text(encoding="utf-8")
+    lib_rs = (ROOT / "apps/desktop/src-tauri/src/lib.rs").read_text(encoding="utf-8")
     main_rs = (ROOT / "apps/desktop/src-tauri/src/main.rs").read_text(encoding="utf-8")
     capability = (ROOT / "apps/desktop/src-tauri/capabilities/default.json").read_text(
         encoding="utf-8"
     )
 
     assert "tauri-plugin-dialog" in cargo_toml
-    assert "tauri_plugin_dialog::init()" in main_rs
+    assert "tauri_plugin_dialog::init()" in lib_rs
+    assert "prompt_optimizer_studio_lib::run()" in main_rs
     assert "dialog:allow-open" in capability

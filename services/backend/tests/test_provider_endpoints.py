@@ -92,8 +92,7 @@ def test_legacy_codex_persisted_settings_are_normalized_on_startup(tmp_path) -> 
 
     assert default_model is not None
     assert json.loads(default_model.value) == DEFAULT_CODEX_MODEL_OPTIONS[0]
-    assert model_options is not None
-    assert json.loads(model_options.value) == DEFAULT_CODEX_MODEL_OPTIONS
+    assert model_options is None
 
 
 def test_codex_runtime_options_patch_updates_reasoning_effort() -> None:

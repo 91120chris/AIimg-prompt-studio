@@ -23,7 +23,6 @@ PERSISTED_SETTING_KEYS = {
     "selected_image_provider",
     "cors_allow_origins",
     "codex_default_model",
-    "codex_model_options",
     "codex_default_reasoning_effort",
     "codex_reasoning_effort_options",
     "codex_default_reasoning_summary",
@@ -34,6 +33,7 @@ PERSISTED_SETTING_KEYS = {
     "ollama_agent_temperature",
     "frontend_api_base_url",
 }
+DEPRECATED_PERSISTED_SETTING_KEYS = {"codex_model_options"}
 
 
 def load_persisted_app_settings(engine: Engine, settings: Settings) -> None:
@@ -50,6 +50,7 @@ def load_persisted_app_settings(engine: Engine, settings: Settings) -> None:
             continue
 
     apply_persisted_app_settings(settings, values)
+    prune_deprecated_app_settings(engine)
     persist_normalized_codex_settings(engine, settings)
 
 
@@ -72,9 +73,17 @@ def persist_normalized_codex_settings(engine: Engine, settings: Settings) -> Non
         engine,
         {
             "codex_default_model": settings.codex_default_model,
-            "codex_model_options": settings.codex_model_options,
         },
     )
+
+
+def prune_deprecated_app_settings(engine: Engine) -> None:
+    with new_session(engine) as db:
+        for key in DEPRECATED_PERSISTED_SETTING_KEYS:
+            record = db.get(AppSettingRecord, key)
+            if record is not None:
+                db.delete(record)
+        db.commit()
 
 
 def apply_persisted_app_settings(settings: Settings, values: Mapping[str, object]) -> None:

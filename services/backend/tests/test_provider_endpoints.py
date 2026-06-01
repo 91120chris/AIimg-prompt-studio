@@ -1,5 +1,10 @@
+import json
+
 from fastapi.testclient import TestClient
 
+from app.core.app_settings_store import persist_app_settings
+from app.db.models import AppSettingRecord
+from app.db.session import new_session
 from app.main import create_app
 from app.settings import DEFAULT_CODEX_MODEL_OPTIONS, Settings
 
@@ -44,6 +49,51 @@ def test_codex_model_options_patch_rejects_legacy_custom_labels() -> None:
 
     assert response.status_code == 422
     assert response.json()["detail"]["code"] == "unknown_codex_model_option"
+
+
+def test_legacy_codex_persisted_settings_are_normalized_on_startup(tmp_path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'app.sqlite3'}"
+    seed_app = create_app(
+        Settings(
+            storage_root=str(tmp_path / "storage"),
+            database_url=database_url,
+            _env_file=None,
+        )
+    )
+    persist_app_settings(
+        seed_app.state.engine,
+        {
+            "codex_default_model": "auto",
+            "codex_model_options": ["auto", "custom"],
+        },
+    )
+
+    client = TestClient(
+        create_app(
+            Settings(
+                storage_root=str(tmp_path / "storage"),
+                database_url=database_url,
+                load_persisted_settings=True,
+                _env_file=None,
+            )
+        )
+    )
+
+    response = client.get("/providers/codex/models")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["default_model"] == DEFAULT_CODEX_MODEL_OPTIONS[0]
+    assert payload["model_options"] == DEFAULT_CODEX_MODEL_OPTIONS
+
+    with new_session(seed_app.state.engine) as db:
+        default_model = db.get(AppSettingRecord, "codex_default_model")
+        model_options = db.get(AppSettingRecord, "codex_model_options")
+
+    assert default_model is not None
+    assert json.loads(default_model.value) == DEFAULT_CODEX_MODEL_OPTIONS[0]
+    assert model_options is not None
+    assert json.loads(model_options.value) == DEFAULT_CODEX_MODEL_OPTIONS
 
 
 def test_codex_runtime_options_patch_updates_reasoning_effort() -> None:

@@ -50,6 +50,7 @@ def load_persisted_app_settings(engine: Engine, settings: Settings) -> None:
             continue
 
     apply_persisted_app_settings(settings, values)
+    persist_normalized_codex_settings(engine, settings)
 
 
 def persist_app_settings(engine: Engine, values: Mapping[str, object]) -> None:
@@ -64,6 +65,16 @@ def persist_app_settings(engine: Engine, values: Mapping[str, object]) -> None:
             record.value = json.dumps(value, ensure_ascii=False, sort_keys=True)
             record.updated_at = utc_now_iso()
         db.commit()
+
+
+def persist_normalized_codex_settings(engine: Engine, settings: Settings) -> None:
+    persist_app_settings(
+        engine,
+        {
+            "codex_default_model": settings.codex_default_model,
+            "codex_model_options": settings.codex_model_options,
+        },
+    )
 
 
 def apply_persisted_app_settings(settings: Settings, values: Mapping[str, object]) -> None:

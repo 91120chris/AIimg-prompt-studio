@@ -119,6 +119,7 @@ $env:RUN_CODEX_SMOKE="1"; uv run pytest -m codex_smoke
 - Codex CLI is the primary agent provider. The current loop can ask Codex for a schema-validated questionnaire, produce an optimized prompt, generate an image after explicit confirmation, ask for post-generation feedback, and refine the next prompt version from that feedback.
 - Ollama is the local fallback agent provider. The desktop shell reads installed Ollama models live from `/api/tags`, lets you choose the current local model, and uses `/api/generate` with structured output schema for questionnaire, prompt optimization, feedback questionnaire, and refinement turns.
 - If an agent response fails strict schema validation even after one repair attempt, the backend returns a safe single-question text questionnaire so the user can continue manually instead of losing the flow.
+- The Manager drawer now reads local model status, skill versions, template versions, and recent logs from backend APIs. Patch proposal endpoints currently record and approve/reject proposals only; applying content diffs is a later milestone.
 - Diffusers FLUX support comes after Milestone 1C / Phase 1.
 - `CORS_ALLOW_ORIGINS` is comma-separated and parsed with `NoDecode`.
 - `CODEX_MODEL_OPTIONS` is comma-separated and parsed with `NoDecode`.
@@ -135,9 +136,25 @@ $env:RUN_CODEX_SMOKE="1"; uv run pytest -m codex_smoke
 - `GET /providers/ollama/status`
 - `GET /providers/ollama/models`
 - `PATCH /providers/ollama/default-model`
+- `GET /models`
+- `GET /models/flux/status`
+- `POST /models/flux/set-path`
+- `POST /models/flux/install`
+- `POST /models/flux/unload`
 - `GET /settings/safe`
 - `PATCH /settings/safe`
 - `GET /security/secrets/status`
+- `GET /skills`
+- `GET /skills/{skill_id}`
+- `POST /skills/patch-proposals`
+- `POST /skills/patch-proposals/{proposal_id}/approve`
+- `POST /skills/patch-proposals/{proposal_id}/reject`
+- `GET /templates`
+- `GET /templates/{template_id}`
+- `POST /templates/patch-proposals`
+- `POST /templates/patch-proposals/{proposal_id}/approve`
+- `POST /templates/patch-proposals/{proposal_id}/reject`
+- `GET /logs`
 - `POST /sessions`
 - `GET /sessions`
 - `GET /sessions/{session_id}`

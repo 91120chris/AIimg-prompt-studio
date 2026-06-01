@@ -1,0 +1,67 @@
+from fastapi.testclient import TestClient
+
+from app.core.session_workspace import new_id
+from app.db.models import LogRecord
+from app.db.session import new_session
+from app.main import create_app
+from app.settings import Settings
+
+
+def make_client(tmp_path) -> tuple[object, TestClient]:
+    app = create_app(
+        Settings(
+            storage_root=str(tmp_path / "storage"),
+            database_url=f"sqlite:///{tmp_path / 'app.sqlite3'}",
+            _env_file=None,
+        )
+    )
+    return app, TestClient(app)
+
+
+def test_flux_status_and_set_path_do_not_return_raw_model_path(tmp_path) -> None:
+    _, client = make_client(tmp_path)
+    model_path = str(tmp_path / "local_models" / "flux-secret-path")
+
+    initial = client.get("/models/flux/status")
+    set_path = client.post("/models/flux/set-path", json={"model_path": model_path})
+    listed = client.get("/models")
+
+    assert initial.status_code == 200
+    assert initial.json()["status"] == "not_installed"
+    assert set_path.status_code == 200
+    payload = set_path.json()
+    assert payload["status"] == "path_selected"
+    assert payload["path_configured"] is True
+    assert payload["path_label"] == "flux-secret-path"
+    assert model_path not in set_path.text
+    assert listed.status_code == 200
+    assert listed.json()[0]["provider"] == "diffusers_flux2_klein_9b_fp8"
+    assert model_path not in listed.text
+
+
+def test_flux_install_and_unload_update_status(tmp_path) -> None:
+    _, client = make_client(tmp_path)
+
+    install = client.post("/models/flux/install")
+    unload = client.post("/models/flux/unload")
+
+    assert install.status_code == 200
+    assert install.json()["status"] == "install_pending"
+    assert unload.status_code == 200
+    assert unload.json()["status"] == "unloaded"
+
+
+def test_logs_endpoint_returns_recent_logs(tmp_path) -> None:
+    app, client = make_client(tmp_path)
+    with new_session(app.state.engine) as db:
+        db.add(LogRecord(log_id=new_id("log"), level="info", message="first"))
+        db.add(LogRecord(log_id=new_id("log"), level="warning", message="second"))
+        db.commit()
+
+    response = client.get("/logs?limit=1")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload) == 1
+    assert payload[0]["level"] in {"info", "warning"}
+    assert "message" in payload[0]

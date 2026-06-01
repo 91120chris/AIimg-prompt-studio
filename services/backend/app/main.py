@@ -3,10 +3,14 @@ from fastapi import FastAPI
 from app.api.agent import router as agent_router
 from app.api.files import router as files_router
 from app.api.generation import router as generation_router
+from app.api.logs import router as logs_router
+from app.api.models import router as models_router
 from app.api.providers import router as providers_router
 from app.api.security import router as security_router
 from app.api.sessions import router as sessions_router
 from app.api.settings import router as settings_router
+from app.api.skills import router as skills_router
+from app.api.templates import router as templates_router
 from app.core.app_settings_store import load_persisted_app_settings
 from app.cors import configure_cors
 from app.db.session import create_db_engine, init_db
@@ -40,6 +44,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(agent_router)
     app.include_router(generation_router)
     app.include_router(files_router)
+    app.include_router(skills_router)
+    app.include_router(templates_router)
+    app.include_router(models_router)
+    app.include_router(logs_router)
 
     return app
 

@@ -21,6 +21,8 @@ from app.schemas.generation import (
     GenerationJobResponse,
     GenerationParameters,
 )
+from app.schemas.logs import LogResponse
+from app.schemas.model_management import FluxPathRequest, FluxStatusResponse, ModelInfoResponse
 from app.schemas.provider import (
     CodexModelsResponse,
     CodexReasoningEffort,
@@ -47,6 +49,11 @@ from app.schemas.questionnaire_answers import (
     ScaleQuestionnaireAnswer,
     TextQuestionnaireAnswer,
 )
+from app.schemas.registry import (
+    RegistryItemResponse,
+    RegistryPatchProposalCreateRequest,
+    RegistryPatchProposalResponse,
+)
 from app.schemas.session import SessionCreateRequest, SessionResponse
 from app.schemas.settings import SafeSettingsPatch, SafeSettingsResponse
 
@@ -68,6 +75,9 @@ __all__ = [
     "CodexVerbosity",
     "ErrorTurnResponse",
     "GeneratedImageResponse",
+    "LogResponse",
+    "FluxPathRequest",
+    "FluxStatusResponse",
     "GenerationImage",
     "GenerationCancelRequest",
     "GenerationConfirmRequest",
@@ -76,6 +86,7 @@ __all__ = [
     "GenerationResult",
     "HealthResponse",
     "MessageTurnResponse",
+    "ModelInfoResponse",
     "MultiChoiceQuestionnaireAnswer",
     "OllamaModelsResponse",
     "OllamaStatusResponse",
@@ -86,6 +97,9 @@ __all__ = [
     "QuestionnaireAnswerPayload",
     "QuestionnaireTurnResponse",
     "ReferenceImageResponse",
+    "RegistryItemResponse",
+    "RegistryPatchProposalCreateRequest",
+    "RegistryPatchProposalResponse",
     "SafeSettingsResponse",
     "SafeSettingsPatch",
     "ScaleQuestion",

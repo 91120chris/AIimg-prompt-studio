@@ -15,11 +15,14 @@ import {
   type CodexStatusResponse,
   type GenerationJobResponse,
   type HealthResponse,
+  type LogResponse,
+  type ModelInfoResponse,
   type OllamaModelsResponse,
   type OllamaStatusResponse,
   type Question,
   type Questionnaire,
   type ReferenceImageResponse,
+  type RegistryItemResponse,
   type SafeSettingsResponse,
   type SecretStatusResponse,
   type SessionResponse,
@@ -28,9 +31,12 @@ import {
   codexStatusResponseSchema,
   generationJobResponseSchema,
   healthResponseSchema,
+  logsResponseSchema,
+  modelInfoListResponseSchema,
   ollamaModelsResponseSchema,
   ollamaStatusResponseSchema,
   referenceImageResponseSchema,
+  registryItemsResponseSchema,
   safeSettingsResponseSchema,
   secretStatusResponseSchema,
   sessionResponseSchema,
@@ -216,6 +222,12 @@ function App() {
   const [historyMessage, setHistoryMessage] = useState<string | null>(null);
   const [historyBusy, setHistoryBusy] = useState(false);
   const [sessionHistory, setSessionHistory] = useState<SessionResponse[]>([]);
+  const [managerMessage, setManagerMessage] = useState<string | null>(null);
+  const [managerBusy, setManagerBusy] = useState(false);
+  const [managerModels, setManagerModels] = useState<ModelInfoResponse[]>([]);
+  const [managerSkills, setManagerSkills] = useState<RegistryItemResponse[]>([]);
+  const [managerTemplates, setManagerTemplates] = useState<RegistryItemResponse[]>([]);
+  const [managerLogs, setManagerLogs] = useState<LogResponse[]>([]);
   const [backendStatus, setBackendStatus] = useState<BackendStatus>("checking");
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [codexStatus, setCodexStatus] = useState<CodexStatusResponse | null>(null);
@@ -559,6 +571,37 @@ function App() {
     setManagerOpen(false);
     setHistoryOpen(true);
     await refreshSessionHistory();
+  }
+
+  async function refreshManagerData() {
+    setManagerBusy(true);
+    setManagerMessage(null);
+    try {
+      const [models, skills, templates, logs] = await Promise.all([
+        fetchJson("/models", modelInfoListResponseSchema),
+        fetchJson("/skills", registryItemsResponseSchema),
+        fetchJson("/templates", registryItemsResponseSchema),
+        fetchJson("/logs", logsResponseSchema),
+      ]);
+      setManagerModels(models);
+      setManagerSkills(skills);
+      setManagerTemplates(templates);
+      setManagerLogs(logs);
+      setManagerMessage(
+        `已載入 ${models.length} models / ${skills.length} skills / ${templates.length} templates / ${logs.length} logs`,
+      );
+    } catch (error) {
+      setManagerMessage(error instanceof Error ? error.message : "無法載入管理資料");
+    } finally {
+      setManagerBusy(false);
+    }
+  }
+
+  async function openManagerDrawer() {
+    setSettingsOpen(false);
+    setHistoryOpen(false);
+    setManagerOpen(true);
+    await refreshManagerData();
   }
 
   async function loadSession(sessionId: string) {
@@ -1169,9 +1212,7 @@ function App() {
             aria-haspopup="dialog"
             aria-expanded={managerOpen}
             onClick={() => {
-              setSettingsOpen(false);
-              setHistoryOpen(false);
-              setManagerOpen(true);
+              void openManagerDrawer();
             }}
           >
             <Database size={17} aria-hidden="true" />
@@ -1632,27 +1673,94 @@ function App() {
             </header>
 
             <div className="drawer-content">
+              <button
+                className="command-button"
+                type="button"
+                disabled={managerBusy}
+                onClick={() => {
+                  void refreshManagerData();
+                }}
+              >
+                <RefreshCcw size={16} aria-hidden="true" />
+                {managerBusy ? "載入中" : "重新整理"}
+              </button>
+
               <section className="settings-section">
                 <h3>Models</h3>
-                <p>FLUX 模型狀態、安裝、卸載與本機路徑選擇會接在這裡。</p>
+                <p>{managerBusy ? "正在載入模型狀態..." : `${managerModels.length} 個模型狀態`}</p>
+                <div className="history-list" aria-label="模型狀態清單">
+                  {managerModels.length === 0 ? (
+                    <p>尚無模型狀態。</p>
+                  ) : (
+                    managerModels.map((model) => (
+                      <div className="history-session" key={model.provider}>
+                        <strong>{model.label}</strong>
+                        <span>
+                          {model.status}
+                          {model.path_label ? ` / ${model.path_label}` : ""}
+                        </span>
+                        <small>{model.message ?? "等待下一步模型管理實作"}</small>
+                      </div>
+                    ))
+                  )}
+                </div>
               </section>
               <section className="settings-section">
                 <h3>Skills</h3>
-                <p>技能清單與 patch proposal 審核流程會接在這裡。</p>
+                <p>{managerBusy ? "正在載入技能..." : `${managerSkills.length} 個技能`}</p>
+                <div className="history-list" aria-label="技能清單">
+                  {managerSkills.length === 0 ? (
+                    <p>尚無技能版本。</p>
+                  ) : (
+                    managerSkills.map((skill) => (
+                      <div className="history-session" key={skill.item_id}>
+                        <strong>{skill.item_id}</strong>
+                        <span>{skill.latest_version_id ?? "未建立版本"}</span>
+                        <small>{skill.content}</small>
+                      </div>
+                    ))
+                  )}
+                </div>
               </section>
               <section className="settings-section">
                 <h3>Templates</h3>
-                <p>模板清單與版本審核流程會接在這裡。</p>
+                <p>{managerBusy ? "正在載入模板..." : `${managerTemplates.length} 個模板`}</p>
+                <div className="history-list" aria-label="模板清單">
+                  {managerTemplates.length === 0 ? (
+                    <p>尚無模板版本。</p>
+                  ) : (
+                    managerTemplates.map((template) => (
+                      <div className="history-session" key={template.item_id}>
+                        <strong>{template.item_id}</strong>
+                        <span>{template.latest_version_id ?? "未建立版本"}</span>
+                        <small>{template.content}</small>
+                      </div>
+                    ))
+                  )}
+                </div>
               </section>
               <section className="settings-section">
                 <h3>Logs</h3>
-                <p>本機執行記錄與 provider error trace 會接在這裡。</p>
+                <p>{managerBusy ? "正在載入記錄..." : `${managerLogs.length} 筆近期記錄`}</p>
+                <div className="history-list" aria-label="近期記錄清單">
+                  {managerLogs.length === 0 ? (
+                    <p>尚無執行記錄。</p>
+                  ) : (
+                    managerLogs.map((log) => (
+                      <div className="history-session" key={log.log_id}>
+                        <strong>{log.level}</strong>
+                        <span>{formatSessionTime(log.created_at)}</span>
+                        <small>{log.message}</small>
+                      </div>
+                    ))
+                  )}
+                </div>
               </section>
             </div>
 
             <footer className="drawer-footer">
               <Database size={16} aria-hidden="true" />
-              <span>下一步會補 Models / Skills / Templates / Logs API。</span>
+              <span>{managerMessage ?? "Models / Skills / Templates / Logs API 已接上。"}</span>
             </footer>
           </aside>
         </div>

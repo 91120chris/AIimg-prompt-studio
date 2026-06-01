@@ -214,6 +214,35 @@ export const sessionResponseSchema = z.object({
 
 export const sessionsResponseSchema = z.array(sessionResponseSchema);
 
+export const registryItemResponseSchema = z.object({
+  registry_kind: z.enum(["skill", "template"]),
+  item_id: z.string(),
+  latest_version_id: z.string().nullable(),
+  content: z.string(),
+  created_at: z.string().nullable(),
+});
+
+export const modelInfoResponseSchema = z.object({
+  provider: z.string(),
+  label: z.string(),
+  status: z.string(),
+  installed: z.boolean(),
+  path_configured: z.boolean(),
+  path_label: z.string().nullable(),
+  message: z.string().nullable(),
+});
+
+export const logResponseSchema = z.object({
+  log_id: z.string(),
+  level: z.string(),
+  message: z.string(),
+  created_at: z.string(),
+});
+
+export const registryItemsResponseSchema = z.array(registryItemResponseSchema);
+export const modelInfoListResponseSchema = z.array(modelInfoResponseSchema);
+export const logsResponseSchema = z.array(logResponseSchema);
+
 export type HealthResponse = z.infer<typeof healthResponseSchema>;
 export type CodexStatusResponse = z.infer<typeof codexStatusResponseSchema>;
 export type CodexModelsResponse = z.infer<typeof codexModelsResponseSchema>;
@@ -227,3 +256,6 @@ export type Question = z.infer<typeof questionSchema>;
 export type Questionnaire = z.infer<typeof questionnaireSchema>;
 export type ReferenceImageResponse = z.infer<typeof referenceImageResponseSchema>;
 export type SessionResponse = z.infer<typeof sessionResponseSchema>;
+export type RegistryItemResponse = z.infer<typeof registryItemResponseSchema>;
+export type ModelInfoResponse = z.infer<typeof modelInfoResponseSchema>;
+export type LogResponse = z.infer<typeof logResponseSchema>;

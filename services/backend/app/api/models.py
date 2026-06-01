@@ -4,7 +4,8 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Request
 from sqlmodel import select
 
-from app.db.models import ModelStatusRecord
+from app.core.session_workspace import new_id
+from app.db.models import LogRecord, ModelStatusRecord
 from app.db.session import new_session
 from app.schemas.model_management import FluxPathRequest, FluxStatusResponse, ModelInfoResponse
 
@@ -24,6 +25,18 @@ def _path_label(model_path: object) -> str | None:
     return Path(model_path).name or "configured"
 
 
+def _details_from_record(record: ModelStatusRecord | None) -> dict[str, object]:
+    if record is None:
+        return {}
+    try:
+        details = json.loads(record.details_json)
+    except json.JSONDecodeError:
+        return {}
+    if not isinstance(details, dict):
+        return {}
+    return details
+
+
 def _flux_status_from_record(record: ModelStatusRecord | None) -> FluxStatusResponse:
     if record is None:
         return FluxStatusResponse(
@@ -36,10 +49,7 @@ def _flux_status_from_record(record: ModelStatusRecord | None) -> FluxStatusResp
             message="Phase 2 provider placeholder. Set a local path or implement installer next.",
         )
 
-    try:
-        details = json.loads(record.details_json)
-    except json.JSONDecodeError:
-        details = {}
+    details = _details_from_record(record)
     model_path = details.get("model_path") if isinstance(details, dict) else None
     path_label = _path_label(model_path)
     status = (
@@ -73,8 +83,14 @@ def _get_flux_record(db) -> ModelStatusRecord | None:
     return db.get(ModelStatusRecord, FLUX_PROVIDER)
 
 
-def _upsert_flux_record(db, status: str, details: dict[str, object] | None = None) -> ModelStatusRecord:
+def _upsert_flux_record(
+    db,
+    status: str,
+    details: dict[str, object] | None = None,
+    log_message: str | None = None,
+) -> ModelStatusRecord:
     record = db.get(ModelStatusRecord, FLUX_PROVIDER)
+    existing_details = _details_from_record(record)
     if record is None:
         record = ModelStatusRecord(
             model_status_id=FLUX_PROVIDER,
@@ -82,8 +98,14 @@ def _upsert_flux_record(db, status: str, details: dict[str, object] | None = Non
             status=status,
         )
     record.status = status
-    record.details_json = json.dumps(details or {}, ensure_ascii=False, sort_keys=True)
+    record.details_json = json.dumps(
+        existing_details if details is None else details,
+        ensure_ascii=False,
+        sort_keys=True,
+    )
     db.add(record)
+    if log_message:
+        db.add(LogRecord(log_id=new_id("log"), level="info", message=log_message))
     db.commit()
     db.refresh(record)
     return record
@@ -130,14 +152,18 @@ def flux_status(request: Request) -> FluxStatusResponse:
 @router.post("/flux/install", response_model=FluxStatusResponse)
 def install_flux(request: Request) -> FluxStatusResponse:
     with new_session(_engine(request)) as db:
-        record = _upsert_flux_record(db, "install_pending")
+        record = _upsert_flux_record(
+            db,
+            "install_pending",
+            log_message="FLUX install marked as pending.",
+        )
         return _flux_status_from_record(record)
 
 
 @router.post("/flux/unload", response_model=FluxStatusResponse)
 def unload_flux(request: Request) -> FluxStatusResponse:
     with new_session(_engine(request)) as db:
-        record = _upsert_flux_record(db, "unloaded")
+        record = _upsert_flux_record(db, "unloaded", log_message="FLUX provider unloaded.")
         return _flux_status_from_record(record)
 
 
@@ -150,5 +176,11 @@ def set_flux_path(payload: FluxPathRequest, request: Request) -> FluxStatusRespo
             detail={"code": "empty_flux_model_path", "message": "FLUX model path cannot be empty."},
         )
     with new_session(_engine(request)) as db:
-        record = _upsert_flux_record(db, "path_selected", {"model_path": model_path})
+        path_label = _path_label(model_path) or "configured"
+        record = _upsert_flux_record(
+            db,
+            "path_selected",
+            {"model_path": model_path},
+            log_message=f"FLUX model path selected: {path_label}",
+        )
         return _flux_status_from_record(record)

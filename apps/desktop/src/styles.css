@@ -199,6 +199,7 @@ p {
 .workflow-controls select:hover,
 .workflow-controls input:hover,
 .settings-section select:hover,
+.settings-section input:hover,
 .settings-section textarea:hover,
 .editor-block textarea:hover,
 .question-row select:hover,
@@ -558,6 +559,7 @@ p {
 .workflow-controls select,
 .workflow-controls input,
 .settings-section select,
+.settings-section input,
 .settings-section textarea {
   width: 100%;
   min-width: 0;
@@ -572,6 +574,10 @@ p {
   resize: vertical;
   line-height: 1.5;
   padding: 10px;
+}
+
+.settings-section input::placeholder {
+  color: #81909d;
 }
 
 .reference-slots {
@@ -876,6 +882,47 @@ p {
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.manager-model-controls {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  border: 1px solid #e1e8ed;
+  border-radius: 8px;
+  background: #f8fafb;
+  padding: 10px;
+}
+
+.manager-state-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.manager-state-line span,
+.manager-state-line strong {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.manager-state-line span {
+  color: #526879;
+}
+
+.manager-state-line strong {
+  color: #17202a;
+}
+
+.manager-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .command-button {

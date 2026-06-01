@@ -51,6 +51,29 @@ def test_flux_install_and_unload_update_status(tmp_path) -> None:
     assert unload.json()["status"] == "unloaded"
 
 
+def test_flux_actions_preserve_path_label_and_write_safe_logs(tmp_path) -> None:
+    _, client = make_client(tmp_path)
+    model_path = str(tmp_path / "local_models" / "private-flux")
+
+    set_path = client.post("/models/flux/set-path", json={"model_path": model_path})
+    install = client.post("/models/flux/install")
+    unload = client.post("/models/flux/unload")
+    logs = client.get("/logs")
+
+    assert set_path.status_code == 200
+    assert install.status_code == 200
+    assert install.json()["path_configured"] is True
+    assert install.json()["path_label"] == "private-flux"
+    assert unload.status_code == 200
+    assert unload.json()["path_configured"] is True
+    assert unload.json()["path_label"] == "private-flux"
+    assert logs.status_code == 200
+    assert "FLUX model path selected: private-flux" in logs.text
+    assert "FLUX install marked as pending." in logs.text
+    assert "FLUX provider unloaded." in logs.text
+    assert model_path not in logs.text
+
+
 def test_logs_endpoint_returns_recent_logs(tmp_path) -> None:
     app, client = make_client(tmp_path)
     with new_session(app.state.engine) as db:

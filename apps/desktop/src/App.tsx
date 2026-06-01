@@ -32,6 +32,7 @@ import {
   generationJobResponseSchema,
   healthResponseSchema,
   logsResponseSchema,
+  modelInfoResponseSchema,
   modelInfoListResponseSchema,
   ollamaModelsResponseSchema,
   ollamaStatusResponseSchema,
@@ -47,6 +48,7 @@ type BackendStatus = "checking" | "connected" | "disconnected";
 type AgentProvider = "codex_cli" | "ollama_local_llm";
 type ImageProvider = "codex_cli_gpt_image" | "diffusers_flux2";
 type WorkflowMode = "t2i" | "i2i";
+type FluxManagerAction = "set-path" | "install" | "unload";
 type AnswerDraftValue = string | boolean | number | string[];
 type AnswerDrafts = Record<string, AnswerDraftValue>;
 type FeedbackQuestionnaireContext = { questionnaireId: string; jobId: string };
@@ -70,6 +72,8 @@ const fallbackOllamaModels: OllamaModelsResponse = {
   selected_model: null,
   models: [],
 };
+
+const FLUX_PROVIDER_ID = "diffusers_flux2_klein_9b_fp8";
 
 const backendBaseUrl = __FRONTEND_API_BASE_URL__.replace(/\/$/, "");
 
@@ -228,6 +232,8 @@ function App() {
   const [managerSkills, setManagerSkills] = useState<RegistryItemResponse[]>([]);
   const [managerTemplates, setManagerTemplates] = useState<RegistryItemResponse[]>([]);
   const [managerLogs, setManagerLogs] = useState<LogResponse[]>([]);
+  const [fluxPathDraft, setFluxPathDraft] = useState("");
+  const [managerActionBusy, setManagerActionBusy] = useState<FluxManagerAction | null>(null);
   const [backendStatus, setBackendStatus] = useState<BackendStatus>("checking");
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [codexStatus, setCodexStatus] = useState<CodexStatusResponse | null>(null);
@@ -249,6 +255,10 @@ function App() {
     useState<FeedbackQuestionnaireContext | null>(null);
   const isCodexAgent = agentProvider === "codex_cli";
   const activeAgentName = isCodexAgent ? "Codex" : "Ollama";
+  const fluxModel = useMemo(
+    () => managerModels.find((model) => model.provider === FLUX_PROVIDER_ID) ?? null,
+    [managerModels],
+  );
 
   useEffect(() => {
     setCodexOptionsDraft(codexModels.model_options.join(", "));
@@ -594,6 +604,64 @@ function App() {
       setManagerMessage(error instanceof Error ? error.message : "無法載入管理資料");
     } finally {
       setManagerBusy(false);
+    }
+  }
+
+  function replaceManagerModel(nextModel: ModelInfoResponse) {
+    setManagerModels((current) => {
+      const hasModel = current.some((model) => model.provider === nextModel.provider);
+      if (!hasModel) {
+        return [nextModel, ...current];
+      }
+      return current.map((model) => (model.provider === nextModel.provider ? nextModel : model));
+    });
+  }
+
+  async function runFluxManagerAction(action: FluxManagerAction) {
+    const modelPath = fluxPathDraft.trim();
+    if (action === "set-path" && !modelPath) {
+      setManagerMessage("請先輸入 FLUX 本機模型路徑。");
+      return;
+    }
+
+    const actionPath =
+      action === "set-path"
+        ? "/models/flux/set-path"
+        : action === "install"
+          ? "/models/flux/install"
+          : "/models/flux/unload";
+    const actionMessages: Record<FluxManagerAction, string> = {
+      "set-path": "FLUX 路徑已儲存。",
+      install: "FLUX 已標記為待安裝。",
+      unload: "FLUX 已卸載。",
+    };
+
+    setManagerActionBusy(action);
+    setManagerMessage(null);
+    try {
+      const response = await fetch(`${backendBaseUrl}${actionPath}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: action === "set-path" ? JSON.stringify({ model_path: modelPath }) : undefined,
+      });
+      if (!response.ok) {
+        throw new Error(await readErrorMessage(response));
+      }
+      const model = modelInfoResponseSchema.parse(await response.json());
+      replaceManagerModel(model);
+      if (action === "set-path") {
+        setFluxPathDraft("");
+      }
+      try {
+        setManagerLogs(await fetchJson("/logs", logsResponseSchema));
+      } catch {
+        // The model action succeeded; log refresh can recover on the next manual refresh.
+      }
+      setManagerMessage(actionMessages[action]);
+    } catch (error) {
+      setManagerMessage(error instanceof Error ? error.message : "FLUX 模型操作失敗");
+    } finally {
+      setManagerActionBusy(null);
     }
   }
 
@@ -1688,6 +1756,64 @@ function App() {
               <section className="settings-section">
                 <h3>Models</h3>
                 <p>{managerBusy ? "正在載入模型狀態..." : `${managerModels.length} 個模型狀態`}</p>
+                <div className="manager-model-controls" aria-label="FLUX 模型管理">
+                  <div className="manager-state-line">
+                    <span>FLUX.2 Klein 9B FP8</span>
+                    <strong>
+                      {fluxModel
+                        ? `${fluxModel.status}${fluxModel.path_label ? ` / ${fluxModel.path_label}` : ""}`
+                        : "尚未載入"}
+                    </strong>
+                  </div>
+                  <label>
+                    本機模型路徑
+                    <input
+                      value={fluxPathDraft}
+                      placeholder="例如 C:\models\flux2-klein-fp8"
+                      onChange={(event) => setFluxPathDraft(event.target.value)}
+                    />
+                  </label>
+                  <div className="manager-actions" aria-label="FLUX 模型操作">
+                    <button
+                      className="command-button command-button-primary"
+                      type="button"
+                      disabled={managerBusy || managerActionBusy !== null}
+                      onClick={() => {
+                        void runFluxManagerAction("set-path");
+                      }}
+                    >
+                      <Save size={16} aria-hidden="true" />
+                      儲存路徑
+                    </button>
+                    <button
+                      className="command-button"
+                      type="button"
+                      disabled={managerBusy || managerActionBusy !== null}
+                      onClick={() => {
+                        void runFluxManagerAction("install");
+                      }}
+                    >
+                      <RefreshCcw size={16} aria-hidden="true" />
+                      排入安裝
+                    </button>
+                    <button
+                      className="command-button"
+                      type="button"
+                      disabled={managerBusy || managerActionBusy !== null}
+                      onClick={() => {
+                        void runFluxManagerAction("unload");
+                      }}
+                    >
+                      <X size={16} aria-hidden="true" />
+                      卸載
+                    </button>
+                  </div>
+                  <p aria-live="polite">
+                    {managerActionBusy
+                      ? "正在更新 FLUX 模型狀態..."
+                      : "完整本機路徑只保存在後端資料庫，介面只顯示資料夾或檔名。"}
+                  </p>
+                </div>
                 <div className="history-list" aria-label="模型狀態清單">
                   {managerModels.length === 0 ? (
                     <p>尚無模型狀態。</p>

@@ -20,6 +20,7 @@ apps/desktop/.vite/
 
 # Tauri / Rust
 apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/gen/
 apps/desktop/src-tauri/Cargo.lock
 
 # OS / editor

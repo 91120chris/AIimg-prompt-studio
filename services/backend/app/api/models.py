@@ -7,7 +7,13 @@ from sqlmodel import select
 from app.core.session_workspace import new_id
 from app.db.models import LogRecord, ModelStatusRecord
 from app.db.session import new_session
-from app.schemas.model_management import FluxPathRequest, FluxStatusResponse, ModelInfoResponse
+from app.schemas.model_management import (
+    FluxPathRequest,
+    FluxReadinessResponse,
+    FluxStatusResponse,
+    ModelInfoResponse,
+)
+from app.settings import Settings
 
 router = APIRouter(prefix="/models", tags=["models"])
 
@@ -17,6 +23,10 @@ FLUX_LABEL = "FLUX.2 Klein 9B FP8"
 
 def _engine(request: Request):
     return request.app.state.engine
+
+
+def _settings(request: Request) -> Settings:
+    return request.app.state.settings
 
 
 def _path_label(model_path: object) -> str | None:
@@ -81,6 +91,32 @@ def _message_for_status(status: str) -> str:
 
 def _get_flux_record(db) -> ModelStatusRecord | None:
     return db.get(ModelStatusRecord, FLUX_PROVIDER)
+
+
+def _readiness_from_record(
+    record: ModelStatusRecord | None,
+    settings: Settings,
+) -> FluxReadinessResponse:
+    details = _details_from_record(record)
+    model_path = details.get("model_path")
+    path_label = _path_label(model_path)
+    hf_token_configured = settings.hf_token is not None
+    hf_cache_configured = settings.hf_home is not None or settings.hf_hub_cache is not None
+    can_queue_install = hf_token_configured
+    if can_queue_install:
+        message = "HF token is configured. Automatic FLUX install can be queued."
+    else:
+        message = "HF token is required before automatic FLUX install can be queued."
+    return FluxReadinessResponse(
+        provider=FLUX_PROVIDER,
+        label=FLUX_LABEL,
+        hf_token_configured=hf_token_configured,
+        hf_cache_configured=hf_cache_configured,
+        path_configured=path_label is not None,
+        path_label=path_label,
+        can_queue_install=can_queue_install,
+        message=message,
+    )
 
 
 def _upsert_flux_record(
@@ -149,8 +185,23 @@ def flux_status(request: Request) -> FluxStatusResponse:
         return _flux_status_from_record(_get_flux_record(db))
 
 
+@router.get("/flux/readiness", response_model=FluxReadinessResponse)
+def flux_readiness(request: Request) -> FluxReadinessResponse:
+    with new_session(_engine(request)) as db:
+        return _readiness_from_record(_get_flux_record(db), _settings(request))
+
+
 @router.post("/flux/install", response_model=FluxStatusResponse)
 def install_flux(request: Request) -> FluxStatusResponse:
+    settings = _settings(request)
+    if settings.hf_token is None:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "hf_token_required",
+                "message": "HF_TOKEN must be configured before queuing automatic FLUX install.",
+            },
+        )
     with new_session(_engine(request)) as db:
         record = _upsert_flux_record(
             db,

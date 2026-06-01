@@ -7,11 +7,12 @@ from app.main import create_app
 from app.settings import Settings
 
 
-def make_client(tmp_path) -> tuple[object, TestClient]:
+def make_client(tmp_path, hf_token: str | None = None) -> tuple[object, TestClient]:
     app = create_app(
         Settings(
             storage_root=str(tmp_path / "storage"),
             database_url=f"sqlite:///{tmp_path / 'app.sqlite3'}",
+            hf_token=hf_token,
             _env_file=None,
         )
     )
@@ -40,7 +41,7 @@ def test_flux_status_and_set_path_do_not_return_raw_model_path(tmp_path) -> None
 
 
 def test_flux_install_and_unload_update_status(tmp_path) -> None:
-    _, client = make_client(tmp_path)
+    _, client = make_client(tmp_path, hf_token="hf_test_token")
 
     install = client.post("/models/flux/install")
     unload = client.post("/models/flux/unload")
@@ -51,8 +52,34 @@ def test_flux_install_and_unload_update_status(tmp_path) -> None:
     assert unload.json()["status"] == "unloaded"
 
 
-def test_flux_actions_preserve_path_label_and_write_safe_logs(tmp_path) -> None:
+def test_flux_readiness_does_not_return_hf_token_or_raw_path(tmp_path) -> None:
+    _, client = make_client(tmp_path, hf_token="hf_secret_token")
+    model_path = str(tmp_path / "local_models" / "private-flux")
+
+    client.post("/models/flux/set-path", json={"model_path": model_path})
+    readiness = client.get("/models/flux/readiness")
+
+    assert readiness.status_code == 200
+    payload = readiness.json()
+    assert payload["hf_token_configured"] is True
+    assert payload["can_queue_install"] is True
+    assert payload["path_configured"] is True
+    assert payload["path_label"] == "private-flux"
+    assert "hf_secret_token" not in readiness.text
+    assert model_path not in readiness.text
+
+
+def test_flux_install_requires_hf_token(tmp_path) -> None:
     _, client = make_client(tmp_path)
+
+    response = client.post("/models/flux/install")
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "hf_token_required"
+
+
+def test_flux_actions_preserve_path_label_and_write_safe_logs(tmp_path) -> None:
+    _, client = make_client(tmp_path, hf_token="hf_test_token")
     model_path = str(tmp_path / "local_models" / "private-flux")
 
     set_path = client.post("/models/flux/set-path", json={"model_path": model_path})

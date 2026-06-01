@@ -26,5 +26,16 @@ class FluxStatusResponse(StrictBaseModel):
     message: str
 
 
+class FluxReadinessResponse(StrictBaseModel):
+    provider: FluxProvider
+    label: str
+    hf_token_configured: bool
+    hf_cache_configured: bool
+    path_configured: bool
+    path_label: str | None = None
+    can_queue_install: bool
+    message: str
+
+
 class FluxPathRequest(StrictBaseModel):
     model_path: str

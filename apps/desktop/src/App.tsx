@@ -13,6 +13,7 @@ import {
   type AgentTurnResponse,
   type CodexModelsResponse,
   type CodexStatusResponse,
+  type FluxReadinessResponse,
   type GenerationJobResponse,
   type HealthResponse,
   type LogResponse,
@@ -29,6 +30,7 @@ import {
   agentTurnResponseSchema,
   codexModelsResponseSchema,
   codexStatusResponseSchema,
+  fluxReadinessResponseSchema,
   generationJobResponseSchema,
   healthResponseSchema,
   logsResponseSchema,
@@ -232,6 +234,7 @@ function App() {
   const [managerSkills, setManagerSkills] = useState<RegistryItemResponse[]>([]);
   const [managerTemplates, setManagerTemplates] = useState<RegistryItemResponse[]>([]);
   const [managerLogs, setManagerLogs] = useState<LogResponse[]>([]);
+  const [fluxReadiness, setFluxReadiness] = useState<FluxReadinessResponse | null>(null);
   const [fluxPathDraft, setFluxPathDraft] = useState("");
   const [managerActionBusy, setManagerActionBusy] = useState<FluxManagerAction | null>(null);
   const [backendStatus, setBackendStatus] = useState<BackendStatus>("checking");
@@ -587,13 +590,15 @@ function App() {
     setManagerBusy(true);
     setManagerMessage(null);
     try {
-      const [models, skills, templates, logs] = await Promise.all([
+      const [models, readiness, skills, templates, logs] = await Promise.all([
         fetchJson("/models", modelInfoListResponseSchema),
+        fetchJson("/models/flux/readiness", fluxReadinessResponseSchema),
         fetchJson("/skills", registryItemsResponseSchema),
         fetchJson("/templates", registryItemsResponseSchema),
         fetchJson("/logs", logsResponseSchema),
       ]);
       setManagerModels(models);
+      setFluxReadiness(readiness);
       setManagerSkills(skills);
       setManagerTemplates(templates);
       setManagerLogs(logs);
@@ -653,7 +658,12 @@ function App() {
         setFluxPathDraft("");
       }
       try {
-        setManagerLogs(await fetchJson("/logs", logsResponseSchema));
+        const [logs, readiness] = await Promise.all([
+          fetchJson("/logs", logsResponseSchema),
+          fetchJson("/models/flux/readiness", fluxReadinessResponseSchema),
+        ]);
+        setManagerLogs(logs);
+        setFluxReadiness(readiness);
       } catch {
         // The model action succeeded; log refresh can recover on the next manual refresh.
       }
@@ -1765,6 +1775,14 @@ function App() {
                         : "尚未載入"}
                     </strong>
                   </div>
+                  <div className="manager-state-line">
+                    <span>Hugging Face Token</span>
+                    <strong>{fluxReadiness?.hf_token_configured ? "已設定" : "未設定"}</strong>
+                  </div>
+                  <div className="manager-state-line">
+                    <span>HF Cache</span>
+                    <strong>{fluxReadiness?.hf_cache_configured ? "已設定" : "使用預設"}</strong>
+                  </div>
                   <label>
                     本機模型路徑
                     <input
@@ -1788,7 +1806,11 @@ function App() {
                     <button
                       className="command-button"
                       type="button"
-                      disabled={managerBusy || managerActionBusy !== null}
+                      disabled={
+                        managerBusy ||
+                        managerActionBusy !== null ||
+                        fluxReadiness?.can_queue_install !== true
+                      }
                       onClick={() => {
                         void runFluxManagerAction("install");
                       }}
@@ -1811,7 +1833,8 @@ function App() {
                   <p aria-live="polite">
                     {managerActionBusy
                       ? "正在更新 FLUX 模型狀態..."
-                      : "完整本機路徑只保存在後端資料庫，介面只顯示資料夾或檔名。"}
+                      : (fluxReadiness?.message ??
+                        "完整 token 與本機路徑只保存在後端，介面只顯示安全狀態。")}
                   </p>
                 </div>
                 <div className="history-list" aria-label="模型狀態清單">

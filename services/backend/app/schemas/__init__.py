@@ -22,7 +22,12 @@ from app.schemas.generation import (
     GenerationParameters,
 )
 from app.schemas.logs import LogResponse
-from app.schemas.model_management import FluxPathRequest, FluxStatusResponse, ModelInfoResponse
+from app.schemas.model_management import (
+    FluxPathRequest,
+    FluxReadinessResponse,
+    FluxStatusResponse,
+    ModelInfoResponse,
+)
 from app.schemas.provider import (
     CodexModelsResponse,
     CodexReasoningEffort,
@@ -77,6 +82,7 @@ __all__ = [
     "GeneratedImageResponse",
     "LogResponse",
     "FluxPathRequest",
+    "FluxReadinessResponse",
     "FluxStatusResponse",
     "GenerationImage",
     "GenerationCancelRequest",

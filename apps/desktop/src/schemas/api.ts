@@ -232,6 +232,17 @@ export const modelInfoResponseSchema = z.object({
   message: z.string().nullable(),
 });
 
+export const fluxReadinessResponseSchema = z.object({
+  provider: z.literal("diffusers_flux2_klein_9b_fp8"),
+  label: z.string(),
+  hf_token_configured: z.boolean(),
+  hf_cache_configured: z.boolean(),
+  path_configured: z.boolean(),
+  path_label: z.string().nullable(),
+  can_queue_install: z.boolean(),
+  message: z.string(),
+});
+
 export const logResponseSchema = z.object({
   log_id: z.string(),
   level: z.string(),
@@ -258,4 +269,5 @@ export type ReferenceImageResponse = z.infer<typeof referenceImageResponseSchema
 export type SessionResponse = z.infer<typeof sessionResponseSchema>;
 export type RegistryItemResponse = z.infer<typeof registryItemResponseSchema>;
 export type ModelInfoResponse = z.infer<typeof modelInfoResponseSchema>;
+export type FluxReadinessResponse = z.infer<typeof fluxReadinessResponseSchema>;
 export type LogResponse = z.infer<typeof logResponseSchema>;

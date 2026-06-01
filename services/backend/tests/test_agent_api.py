@@ -11,7 +11,8 @@ from app.db.models import (
 )
 from app.db.session import new_session
 from app.main import create_app
-from app.schemas.agent import OptimizedPromptTurnResponse, QuestionnaireTurnResponse
+from app.schemas.agent import ErrorTurnResponse, OptimizedPromptTurnResponse, QuestionnaireTurnResponse
+from app.schemas.errors import StructuredError
 from app.schemas.questionnaire import Questionnaire, TextQuestion
 from app.settings import Settings
 
@@ -455,3 +456,117 @@ def test_agent_turn_uses_ollama_runner(monkeypatch, tmp_path) -> None:
     assert response.status_code == 200
     assert response.json()["kind"] == "questionnaire"
     assert FakeOllamaRunner.models == ["llama3:latest"]
+
+
+def test_agent_turn_provider_error_uses_fallback_questionnaire(monkeypatch, tmp_path) -> None:
+    from app.api import agent
+
+    FakeCodexRunner.responses = [
+        ErrorTurnResponse(
+            kind="error",
+            error=StructuredError(
+                code="codex_exec_failed",
+                message="Codex failed",
+                suggestion="Use manual details.",
+            ),
+        )
+    ]
+    FakeCodexRunner.prompts = []
+    FakeCodexRunner.models = []
+    monkeypatch.setattr(agent, "CodexAgentRunner", FakeCodexRunner)
+
+    app, client = make_test_app(tmp_path)
+    session_id = client.post("/sessions", json={"title": "Test"}).json()["session_id"]
+
+    response = client.post(
+        "/agent/turn",
+        json={
+            "session_id": session_id,
+            "original_prompt": "a glass bottle",
+            "provider": "codex_cli",
+            "codex_model": "gpt-5.5",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["kind"] == "questionnaire"
+    assert payload["questionnaire"]["questions"][0]["question_id"] == "manual_details"
+    assert "codex_exec_failed" in payload["warnings"][0]
+
+    with new_session(app.state.engine) as db:
+        stored_questionnaire = db.get(QuestionnaireRecord, payload["questionnaire"]["questionnaire_id"])
+
+    assert stored_questionnaire is not None
+
+
+def test_feedback_questionnaire_provider_error_uses_fallback_questionnaire(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    from app.api import agent
+
+    FakeCodexRunner.responses = [
+        ErrorTurnResponse(
+            kind="error",
+            error=StructuredError(
+                code="codex_timeout",
+                message="Codex timed out",
+                suggestion=None,
+            ),
+        )
+    ]
+    FakeCodexRunner.prompts = []
+    monkeypatch.setattr(agent, "CodexAgentRunner", FakeCodexRunner)
+
+    app, client = make_test_app(tmp_path)
+    session_id = client.post("/sessions", json={"title": "Test"}).json()["session_id"]
+
+    with new_session(app.state.engine) as db:
+        db.add(PromptRecord(prompt_id="prompt_fb_error", session_id=session_id, text="bottle"))
+        db.add(
+            PromptVersionRecord(
+                prompt_version_id="promptv_fb_error",
+                session_id=session_id,
+                prompt_text="cinematic glass bottle",
+            )
+        )
+        db.add(
+            GenerationJobRecord(
+                job_id="job_fb_error",
+                session_id=session_id,
+                provider="codex_cli_gpt_image",
+                mode="t2i",
+                status="succeeded",
+            )
+        )
+        db.add(
+            GeneratedImageRecord(
+                image_id="img_fb_error",
+                session_id=session_id,
+                role="optimized_prompt",
+                filename="image.png",
+                storage_path=str(tmp_path / "private" / "image.png"),
+                width=32,
+                height=24,
+                seed=None,
+                provider="codex_cli_gpt_image",
+            )
+        )
+        db.commit()
+
+    response = client.post(
+        "/agent/feedback-questionnaire",
+        json={
+            "session_id": session_id,
+            "job_id": "job_fb_error",
+            "provider": "codex_cli",
+            "codex_model": "gpt-5.5",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["kind"] == "questionnaire"
+    assert payload["questionnaire"]["questions"][0]["question_id"] == "manual_details"
+    assert "codex_timeout" in payload["warnings"][0]

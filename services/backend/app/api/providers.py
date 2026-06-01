@@ -13,7 +13,7 @@ from app.schemas.provider import (
     OllamaModelsResponse,
     OllamaStatusResponse,
 )
-from app.settings import Settings
+from app.settings import CODEX_MODEL_OPTION_SET, DEFAULT_CODEX_MODEL_OPTIONS, Settings
 
 router = APIRouter()
 
@@ -46,15 +46,25 @@ def persist_request_settings(request: Request, values: dict[str, object]) -> Non
 
 
 def normalize_model_options(options: list[str]) -> list[str]:
-    normalized = []
     seen = set()
+    had_nonblank_option = False
     for option in options:
         value = option.strip()
-        if not value or value in seen:
+        if not value:
             continue
-        normalized.append(value)
+        had_nonblank_option = True
+        if value in seen:
+            continue
+        if value not in CODEX_MODEL_OPTION_SET:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "unknown_codex_model_option",
+                    "message": "Codex model options must use the bundled Codex CLI model catalog.",
+                },
+            )
         seen.add(value)
-    if not normalized:
+    if not had_nonblank_option:
         raise HTTPException(
             status_code=422,
             detail={
@@ -62,7 +72,7 @@ def normalize_model_options(options: list[str]) -> list[str]:
                 "message": "Codex model options must include at least one model label.",
             },
         )
-    return normalized
+    return DEFAULT_CODEX_MODEL_OPTIONS.copy()
 
 
 def normalize_reasoning_effort_options(options: list[str]) -> list[CodexReasoningEffort]:

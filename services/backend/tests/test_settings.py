@@ -2,7 +2,7 @@ from fastapi.testclient import TestClient
 
 from app.main import create_app
 from app.schemas import SafeSettingsResponse
-from app.settings import Settings
+from app.settings import DEFAULT_CODEX_MODEL_OPTIONS, Settings
 
 
 def test_cors_allow_origins_parses_csv_with_whitespace() -> None:
@@ -25,9 +25,18 @@ def test_cors_allow_origins_parses_single_value() -> None:
 
 
 def test_codex_model_options_parses_csv_with_whitespace() -> None:
-    settings = Settings(codex_model_options="auto, gpt-5.5 , custom", _env_file=None)
+    settings = Settings(
+        codex_model_options="auto, gpt-5.5 , custom, gpt-5.3-codex",
+        _env_file=None,
+    )
 
-    assert settings.codex_model_options == ["auto", "gpt-5.5", "custom"]
+    assert settings.codex_model_options == DEFAULT_CODEX_MODEL_OPTIONS
+
+
+def test_codex_default_model_legacy_auto_uses_first_supported_model() -> None:
+    settings = Settings(codex_default_model="auto", _env_file=None)
+
+    assert settings.codex_default_model == "gpt-5.5"
 
 
 def test_codex_reasoning_effort_options_parses_csv_with_whitespace() -> None:

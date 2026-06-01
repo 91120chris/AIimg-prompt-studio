@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 
 from app.main import create_app
-from app.settings import Settings
+from app.settings import DEFAULT_CODEX_MODEL_OPTIONS, Settings
 
 
 def test_codex_status_endpoint_handles_missing_binary() -> None:
@@ -23,15 +23,27 @@ def test_codex_model_options_patch_updates_in_memory_settings() -> None:
 
     response = client.patch(
         "/providers/codex/model-options",
-        json={"model_options": ["auto", " custom ", "auto"]},
+        json={"model_options": ["gpt-5.5", " gpt-5.3-codex ", "gpt-5.5"]},
     )
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["default_model"] == "auto"
-    assert payload["model_options"] == ["auto", "custom"]
+    assert payload["default_model"] == "gpt-5.5"
+    assert payload["model_options"] == DEFAULT_CODEX_MODEL_OPTIONS
     assert payload["default_reasoning_effort"] == "medium"
     assert payload["reasoning_effort_options"] == ["low", "medium", "high", "xhigh"]
+
+
+def test_codex_model_options_patch_rejects_legacy_custom_labels() -> None:
+    client = TestClient(create_app(Settings(_env_file=None)))
+
+    response = client.patch(
+        "/providers/codex/model-options",
+        json={"model_options": ["auto", "custom"]},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "unknown_codex_model_option"
 
 
 def test_codex_runtime_options_patch_updates_reasoning_effort() -> None:

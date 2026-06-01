@@ -744,13 +744,25 @@ p {
   background: #f4f7f8;
 }
 
-.generated-image-card div {
+.generated-image-meta {
   display: grid;
-  gap: 4px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
   border: 1px solid #d8e0e7;
   border-radius: 8px;
   background: #ffffff;
   padding: 10px;
+}
+
+.generated-image-meta div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.generated-image-meta .command-button {
+  white-space: nowrap;
 }
 
 .generated-image-card strong {

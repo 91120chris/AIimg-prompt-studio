@@ -13,6 +13,8 @@ from app.settings import (
     DEFAULT_CODEX_VERBOSITY_OPTIONS,
     DEFAULT_IMAGE_PROVIDER_OPTIONS,
     Settings,
+    normalize_codex_default_model,
+    normalize_codex_model_options,
     parse_csv,
 )
 
@@ -80,13 +82,13 @@ def apply_persisted_app_settings(settings: Settings, values: Mapping[str, object
             settings.cors_allow_origins = origins
 
     if "codex_model_options" in values:
-        options = parse_csv(_string_or_list(values["codex_model_options"]))
+        options = normalize_codex_model_options(_string_or_list(values["codex_model_options"]))
         if options:
             settings.codex_model_options = options
             if settings.codex_default_model not in options:
                 settings.codex_default_model = options[0]
     if "codex_default_model" in values and isinstance(values["codex_default_model"], str):
-        model = values["codex_default_model"].strip()
+        model = normalize_codex_default_model(values["codex_default_model"])
         if model and model in settings.codex_model_options:
             settings.codex_default_model = model
     if "codex_reasoning_effort_options" in values:

@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import TypeAdapter
 from sqlmodel import select
 
+from app.core.agent_fallbacks import fallback_text_questionnaire
 from app.core.file_store import generated_image_response
 from app.core.prompt_compiler import (
     build_feedback_questionnaire_prompt,
@@ -36,6 +37,7 @@ from app.schemas.agent import (
     AgentRefineRequest,
     AgentTurnRequest,
     AgentTurnResponse,
+    ErrorTurnResponse,
     OptimizedPromptTurnResponse,
     QuestionnaireTurnResponse,
 )
@@ -88,6 +90,29 @@ def _run_agent(settings: Settings, prompt: str, payload: AgentRequestPayload) ->
             suggestion="請選擇 Codex CLI 或 Ollama。",
         ),
     )
+
+
+def _provider_label(payload: AgentRequestPayload) -> str:
+    return "Codex" if payload.provider == "codex_cli" else "Ollama"
+
+
+def _run_questionnaire_agent(
+    settings: Settings,
+    prompt: str,
+    payload: AgentTurnRequest | AgentFeedbackQuestionnaireRequest,
+) -> AgentTurnResponse:
+    try:
+        response = _run_agent(settings, prompt, payload)
+    except Exception as error:
+        return fallback_text_questionnaire(_provider_label(payload), str(error))
+
+    if isinstance(response, ErrorTurnResponse):
+        reason = f"{response.error.code}: {response.error.message}"
+        if response.error.suggestion:
+            reason = f"{reason} {response.error.suggestion}"
+        return fallback_text_questionnaire(_provider_label(payload), reason)
+
+    return response
 
 
 def _store_agent_turn(db, session_id: str, response: AgentTurnResponse) -> None:
@@ -258,7 +283,7 @@ def create_agent_turn(payload: AgentTurnRequest, request: Request) -> AgentTurnR
                 text=payload.original_prompt,
             )
         )
-        response = _run_agent(
+        response = _run_questionnaire_agent(
             settings,
             build_questionnaire_prompt(payload),
             payload,
@@ -337,7 +362,7 @@ def create_feedback_questionnaire(
 
         original_prompt = _get_latest_prompt_text(db, payload.session_id)
         optimized_prompt = _get_latest_optimized_prompt_text(db, payload.session_id)
-        response = _run_agent(
+        response = _run_questionnaire_agent(
             settings,
             build_feedback_questionnaire_prompt(
                 original_prompt=original_prompt,

@@ -1,7 +1,7 @@
 from functools import lru_cache
 from typing import Annotated
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
@@ -13,7 +13,15 @@ DEFAULT_CORS_ALLOW_ORIGINS = [
     "tauri://localhost",
 ]
 
-DEFAULT_CODEX_MODEL_OPTIONS = ["auto", "gpt-5.5", "gpt-5.4"]
+DEFAULT_CODEX_MODEL_OPTIONS = [
+    "gpt-5.5",
+    "gpt-5.4",
+    "gpt-5.4-mini",
+    "gpt-5.3-codex",
+    "gpt-5.3-codex-spark",
+    "gpt-5.2",
+]
+CODEX_MODEL_OPTION_SET = set(DEFAULT_CODEX_MODEL_OPTIONS)
 DEFAULT_CODEX_REASONING_EFFORT_OPTIONS = ["low", "medium", "high", "xhigh"]
 DEFAULT_CODEX_REASONING_SUMMARY_OPTIONS = ["auto", "concise", "detailed", "none"]
 DEFAULT_CODEX_VERBOSITY_OPTIONS = ["low", "medium", "high"]
@@ -27,6 +35,19 @@ def parse_csv(value: str | list[str] | None) -> list[str]:
     if isinstance(value, list):
         return [str(item).strip() for item in value if str(item).strip()]
     return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def normalize_codex_model_options(_value: str | list[str] | None) -> list[str]:
+    return DEFAULT_CODEX_MODEL_OPTIONS.copy()
+
+
+def normalize_codex_default_model(value: str | None) -> str:
+    if value is None:
+        return DEFAULT_CODEX_MODEL_OPTIONS[0]
+    model = value.strip()
+    if model in CODEX_MODEL_OPTION_SET:
+        return model
+    return DEFAULT_CODEX_MODEL_OPTIONS[0]
 
 
 class Settings(BaseSettings):
@@ -54,7 +75,7 @@ class Settings(BaseSettings):
     )
 
     codex_binary_path: str = "codex"
-    codex_default_model: str = "auto"
+    codex_default_model: str = DEFAULT_CODEX_MODEL_OPTIONS[0]
     codex_model_options: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: DEFAULT_CODEX_MODEL_OPTIONS.copy()
     )
@@ -95,6 +116,16 @@ class Settings(BaseSettings):
             allowed = ", ".join(DEFAULT_CODEX_REASONING_EFFORT_OPTIONS)
             raise ValueError(f"CODEX_DEFAULT_REASONING_EFFORT must be one of: {allowed}")
         return value
+
+    @field_validator("codex_model_options")
+    @classmethod
+    def validate_codex_model_options(cls, value: list[str]) -> list[str]:
+        return normalize_codex_model_options(value)
+
+    @field_validator("codex_default_model")
+    @classmethod
+    def validate_codex_default_model(cls, value: str) -> str:
+        return normalize_codex_default_model(value)
 
     @field_validator("codex_default_reasoning_summary")
     @classmethod
@@ -143,6 +174,12 @@ class Settings(BaseSettings):
             return None
         stripped = value.strip()
         return stripped or None
+
+    @model_validator(mode="after")
+    def ensure_codex_default_model_is_listed(self) -> "Settings":
+        if self.codex_default_model not in self.codex_model_options:
+            self.codex_default_model = self.codex_model_options[0]
+        return self
 
 
 @lru_cache

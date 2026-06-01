@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Database,
+  Download,
   FolderOpen,
   History,
   RefreshCcw,
@@ -69,8 +70,15 @@ declare global {
 }
 
 const fallbackCodexModels: CodexModelsResponse = {
-  default_model: "auto",
-  model_options: ["auto", "gpt-5.5", "gpt-5.4"],
+  default_model: "gpt-5.5",
+  model_options: [
+    "gpt-5.5",
+    "gpt-5.4",
+    "gpt-5.4-mini",
+    "gpt-5.3-codex",
+    "gpt-5.3-codex-spark",
+    "gpt-5.2",
+  ],
   default_reasoning_effort: "medium",
   reasoning_effort_options: ["low", "medium", "high", "xhigh"],
   default_reasoning_summary: "auto",
@@ -96,6 +104,15 @@ async function fetchJson<T>(
     throw new Error(`HTTP ${response.status}`);
   }
   return schema.parse(await response.json());
+}
+
+function backendFileUrl(path: string, cacheKey?: string): string {
+  const url = `${backendBaseUrl}${path}`;
+  if (!cacheKey) {
+    return url;
+  }
+  const separator = url.includes("?") ? "&" : "?";
+  return `${url}${separator}v=${encodeURIComponent(cacheKey)}`;
 }
 
 async function readErrorMessage(response: Response): Promise<string> {
@@ -232,9 +249,6 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [managerOpen, setManagerOpen] = useState(false);
-  const [codexOptionsDraft, setCodexOptionsDraft] = useState(
-    fallbackCodexModels.model_options.join(", "),
-  );
   const [settingsMessage, setSettingsMessage] = useState<string | null>(null);
   const [historyMessage, setHistoryMessage] = useState<string | null>(null);
   const [historyBusy, setHistoryBusy] = useState(false);
@@ -256,6 +270,9 @@ function App() {
   const [ollamaModels, setOllamaModels] = useState<OllamaModelsResponse>(fallbackOllamaModels);
   const [secretStatus, setSecretStatus] = useState<SecretStatusResponse | null>(null);
   const [codexModels, setCodexModels] = useState<CodexModelsResponse>(fallbackCodexModels);
+  const [codexOptionsDraft, setCodexOptionsDraft] = useState(
+    fallbackCodexModels.model_options.join(", "),
+  );
   const [currentSession, setCurrentSession] = useState<SessionResponse | null>(null);
   const [referenceImages, setReferenceImages] = useState<ReferenceImageResponse[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -1094,7 +1111,65 @@ function App() {
     return "後端未連線";
   }, [backendStatus]);
 
-  const generatedPreviewImage = generationJob?.images[0] ?? currentSession?.generated_images[0] ?? null;
+  const generatedImages =
+    generationJob && generationJob.images.length > 0
+      ? generationJob.images
+      : (currentSession?.generated_images ?? []);
+  const generatedPreviewImage =
+    generatedImages.length > 0 ? generatedImages[generatedImages.length - 1] : null;
+  const generatedPreviewStatus = generationJob?.status ?? "history";
+
+  async function downloadGeneratedImage() {
+    if (!generatedPreviewImage) {
+      return;
+    }
+
+    setErrorMessage(null);
+    try {
+      const response = await fetch(
+        backendFileUrl(generatedPreviewImage.url, generatedPreviewImage.image_id),
+        { cache: "no-store" },
+      );
+      if (!response.ok) {
+        throw new Error(await readErrorMessage(response));
+      }
+
+      const blob = await response.blob();
+      const filename = generatedPreviewImage.filename || `${generatedPreviewImage.image_id}.png`;
+
+      if (isTauriRuntime()) {
+        const [{ save }, { invoke }] = await Promise.all([
+          import("@tauri-apps/plugin-dialog"),
+          import("@tauri-apps/api/core"),
+        ]);
+        const targetPath = await save({
+          defaultPath: filename,
+          filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp"] }],
+        });
+        if (!targetPath) {
+          setGenerationMessage("已取消下載。");
+          return;
+        }
+        const bytes = Array.from(new Uint8Array(await blob.arrayBuffer()));
+        await invoke("save_binary_file", { path: targetPath, bytes });
+        setGenerationMessage(`已下載圖片：${filename}`);
+        return;
+      }
+
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = filename;
+      document.body.append(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+      setGenerationMessage("已開始下載圖片。");
+    } catch (error) {
+      setGenerationMessage("圖片下載失敗。");
+      setErrorMessage(error instanceof Error ? error.message : "無法下載圖片");
+    }
+  }
 
   function setAnswerDraft(questionId: string, value: AnswerDraftValue) {
     setAnswerDrafts((current) => ({ ...current, [questionId]: value }));
@@ -1652,17 +1727,30 @@ function App() {
             {generatedPreviewImage ? (
               <div className="generated-image-card">
                 <img
-                  src={`${backendBaseUrl}${
-                    generatedPreviewImage.thumbnail_url ?? generatedPreviewImage.url
-                  }`}
+                  src={backendFileUrl(
+                    generatedPreviewImage.thumbnail_url ?? generatedPreviewImage.url,
+                    `${generatedPreviewImage.image_id}-${generatedPreviewImage.created_at}`,
+                  )}
                   alt="生成圖片"
                 />
-                <div>
-                  <strong>{generatedPreviewImage.filename}</strong>
-                  <p>
-                    {generatedPreviewImage.width} x {generatedPreviewImage.height} /{" "}
-                    {generationJob?.status ?? "history"}
-                  </p>
+                <div className="generated-image-meta">
+                  <div>
+                    <strong>{generatedPreviewImage.filename}</strong>
+                    <p>
+                      {generatedPreviewImage.width} x {generatedPreviewImage.height} /{" "}
+                      {generatedPreviewStatus}
+                    </p>
+                  </div>
+                  <button
+                    className="command-button"
+                    type="button"
+                    onClick={() => {
+                      void downloadGeneratedImage();
+                    }}
+                  >
+                    <Download size={16} aria-hidden="true" />
+                    下載圖片
+                  </button>
                 </div>
               </div>
             ) : (
@@ -2086,12 +2174,14 @@ function App() {
                   模型選項
                   <textarea
                     value={codexOptionsDraft}
-                    onChange={(event) => setCodexOptionsDraft(event.target.value)}
+                    readOnly
                   />
                 </label>
                 <button
                   className="command-button command-button-primary"
                   type="button"
+                  hidden
+                  disabled
                   onClick={() => {
                     void saveCodexModelOptions();
                   }}

@@ -57,6 +57,30 @@ def test_ollama_agent_runner_repairs_invalid_json(monkeypatch) -> None:
     assert "not json" in prompts[1]
 
 
+def test_ollama_agent_runner_falls_back_to_text_questionnaire_after_repair_failure(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        ollama_agent_provider,
+        "get_ollama_models",
+        lambda settings: ["llama3:latest"],
+    )
+    outputs = ["not json", "still not json"]
+
+    def fake_generator(settings, model, prompt, schema):
+        return outputs.pop(0)
+
+    runner = OllamaAgentRunner(Settings(_env_file=None), generator=fake_generator)
+
+    response = runner.run("請回覆 JSON。", model="llama3:latest")
+
+    assert response.kind == "questionnaire"
+    assert response.questionnaire.title == "手動補充問卷"
+    assert response.questionnaire.questions[0].kind == "text"
+    assert response.questionnaire.questions[0].question_id == "manual_details"
+    assert response.warnings
+
+
 def test_ollama_agent_runner_returns_error_without_models(monkeypatch) -> None:
     monkeypatch.setattr(ollama_agent_provider, "get_ollama_models", lambda settings: [])
 

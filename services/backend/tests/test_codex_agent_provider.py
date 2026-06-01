@@ -46,3 +46,23 @@ def test_codex_agent_runner_repairs_invalid_json_once(monkeypatch) -> None:
         assert command[-1] == "-"
     assert input_texts[0] == "請回覆 JSON。"
     assert input_texts[1] is not None
+
+
+def test_codex_agent_runner_falls_back_to_text_questionnaire_after_repair_failure(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(codex_agent_provider, "resolve_codex_binary", lambda _: fake_binary())
+    outputs = iter(["not json", "still not json"])
+
+    def fake_executor(command: list[str], timeout_seconds: int, input_text: str | None) -> str:
+        return next(outputs)
+
+    runner = CodexAgentRunner(Settings(_env_file=None), executor=fake_executor)
+
+    response = runner.run("請回覆 JSON。")
+
+    assert response.kind == "questionnaire"
+    assert response.questionnaire.title == "手動補充問卷"
+    assert response.questionnaire.questions[0].kind == "text"
+    assert response.questionnaire.questions[0].question_id == "manual_details"
+    assert response.warnings

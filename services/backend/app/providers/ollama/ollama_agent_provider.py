@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import httpx
 from pydantic import ValidationError
 
+from app.core.agent_fallbacks import fallback_text_questionnaire
 from app.core.json_schema import codex_agent_turn_response_schema
 from app.core.prompt_compiler import build_repair_prompt
 from app.providers.codex.codex_agent_provider import parse_agent_turn_response
@@ -124,10 +125,9 @@ class OllamaAgentRunner:
                 ValidationError,
                 ValueError,
             ) as repair_error:
-                return _error_response(
-                    "ollama_schema_validation_failed",
-                    "Ollama 回傳內容無法通過 strict schema 驗證。",
-                    str(repair_error)[:700],
+                return fallback_text_questionnaire(
+                    "Ollama",
+                    str(repair_error),
                 )
         except OllamaAgentProviderError as error:
             return ErrorTurnResponse(kind="error", error=error.error)

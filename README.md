@@ -118,6 +118,7 @@ $env:RUN_CODEX_SMOKE="1"; uv run pytest -m codex_smoke
 - This app does not require an OpenAI API key.
 - Codex CLI is the primary agent provider. The current loop can ask Codex for a schema-validated questionnaire, produce an optimized prompt, generate an image after explicit confirmation, ask for post-generation feedback, and refine the next prompt version from that feedback.
 - Ollama is the local fallback agent provider. The desktop shell reads installed Ollama models live from `/api/tags`, lets you choose the current local model, and uses `/api/generate` with structured output schema for questionnaire, prompt optimization, feedback questionnaire, and refinement turns.
+- If an agent response fails strict schema validation even after one repair attempt, the backend returns a safe single-question text questionnaire so the user can continue manually instead of losing the flow.
 - Diffusers FLUX support comes after Milestone 1C / Phase 1.
 - `CORS_ALLOW_ORIGINS` is comma-separated and parsed with `NoDecode`.
 - `CODEX_MODEL_OPTIONS` is comma-separated and parsed with `NoDecode`.

@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from pydantic import TypeAdapter, ValidationError
 
+from app.core.agent_fallbacks import fallback_text_questionnaire
 from app.core.json_schema import schema_output_dir
 from app.core.prompt_compiler import build_repair_prompt
 from app.providers.codex.codex_binary_resolver import resolve_codex_binary
@@ -119,10 +120,9 @@ class CodexAgentRunner:
                 ValueError,
                 subprocess.TimeoutExpired,
             ) as repair_error:
-                return _error_response(
-                    "codex_schema_validation_failed",
-                    "Codex 回覆無法通過 strict schema 驗證。",
-                    str(repair_error)[:700],
+                return fallback_text_questionnaire(
+                    "Codex",
+                    str(repair_error),
                 )
         except subprocess.TimeoutExpired:
             return _error_response(

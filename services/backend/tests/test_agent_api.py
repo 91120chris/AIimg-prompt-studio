@@ -570,3 +570,91 @@ def test_feedback_questionnaire_provider_error_uses_fallback_questionnaire(
     assert payload["kind"] == "questionnaire"
     assert payload["questionnaire"]["questions"][0]["question_id"] == "manual_details"
     assert "codex_timeout" in payload["warnings"][0]
+
+
+def test_feedback_questionnaire_can_hide_prompt_context(monkeypatch, tmp_path) -> None:
+    from app.api import agent
+
+    questionnaire = Questionnaire(
+        questionnaire_id="q_hidden_context",
+        title="Feedback",
+        questions=[
+            TextQuestion(
+                kind="text",
+                question_id="fix",
+                label="Fix",
+                prompt="What should change?",
+                required=True,
+            )
+        ],
+    )
+    FakeCodexRunner.responses = [
+        QuestionnaireTurnResponse(
+            kind="questionnaire",
+            message="Feedback questions",
+            questionnaire=questionnaire,
+        )
+    ]
+    FakeCodexRunner.prompts = []
+    monkeypatch.setattr(agent, "CodexAgentRunner", FakeCodexRunner)
+
+    app, client = make_test_app(tmp_path)
+    session_id = client.post("/sessions", json={"title": "Test"}).json()["session_id"]
+
+    with new_session(app.state.engine) as db:
+        db.add(
+            PromptRecord(
+                prompt_id="prompt_hidden_context",
+                session_id=session_id,
+                text="original secret prompt",
+            )
+        )
+        db.add(
+            PromptVersionRecord(
+                prompt_version_id="promptv_hidden_context",
+                session_id=session_id,
+                prompt_text="optimized secret prompt",
+            )
+        )
+        db.add(
+            GenerationJobRecord(
+                job_id="job_hidden_context",
+                session_id=session_id,
+                provider="codex_cli_gpt_image",
+                mode="t2i",
+                status="succeeded",
+            )
+        )
+        db.add(
+            GeneratedImageRecord(
+                image_id="img_hidden_context",
+                session_id=session_id,
+                role="optimized_prompt",
+                filename="image.png",
+                storage_path=str(tmp_path / "private" / "image.png"),
+                width=32,
+                height=24,
+                seed=None,
+                provider="codex_cli_gpt_image",
+            )
+        )
+        db.commit()
+
+    response = client.post(
+        "/agent/feedback-questionnaire",
+        json={
+            "session_id": session_id,
+            "job_id": "job_hidden_context",
+            "provider": "codex_cli",
+            "include_original_prompt_context": False,
+            "include_optimized_prompt_context": False,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["kind"] == "questionnaire"
+    prompt = FakeCodexRunner.prompts[0]
+    assert "[Original prompt context hidden by user.]" in prompt
+    assert "[Optimized prompt context hidden by user.]" in prompt
+    assert "original secret prompt" not in prompt
+    assert "optimized secret prompt" not in prompt

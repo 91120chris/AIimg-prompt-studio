@@ -66,3 +66,91 @@ def test_codex_agent_runner_falls_back_to_text_questionnaire_after_repair_failur
     assert response.questionnaire.questions[0].kind == "text"
     assert response.questionnaire.questions[0].question_id == "manual_details"
     assert response.warnings
+
+
+def test_parse_agent_turn_response_accepts_raw_questionnaire_payload() -> None:
+    response = codex_agent_provider.parse_agent_turn_response(
+        """
+        {
+          "title": "Feedback",
+          "questions": [
+            {
+              "type": "textarea",
+              "id": "changes",
+              "question": "What should change?"
+            }
+          ]
+        }
+        """
+    )
+
+    assert response.kind == "questionnaire"
+    assert response.questionnaire.title == "Feedback"
+    assert response.questionnaire.questions[0].kind == "text"
+    assert response.questionnaire.questions[0].question_id == "changes"
+    assert response.questionnaire.questions[0].prompt == "What should change?"
+
+
+def test_parse_agent_turn_response_normalizes_feedback_questionnaire_aliases() -> None:
+    response = codex_agent_provider.parse_agent_turn_response(
+        """
+        {
+          "kind": "feedback_questionnaire",
+          "message": "Answer these before refining.",
+          "questionnaire": {
+            "name": "Refine feedback",
+            "fields": [
+              {
+                "kind": "multi_choice",
+                "name": "fixes",
+                "question": "Which areas need work?",
+                "options": ["lighting", "composition"]
+              },
+              {
+                "type": "rating",
+                "id": "quality",
+                "question": "How close is it?",
+                "min": "1",
+                "max": "5"
+              }
+            ]
+          }
+        }
+        """
+    )
+
+    assert response.kind == "questionnaire"
+    assert response.message == "Answer these before refining."
+    assert response.questionnaire.title == "Refine feedback"
+
+    choice_question = response.questionnaire.questions[0]
+    assert choice_question.kind == "choice"
+    assert choice_question.question_id == "fixes"
+    assert choice_question.allow_multiple is True
+    assert [option.value for option in choice_question.options] == [
+        "lighting",
+        "composition",
+    ]
+
+    scale_question = response.questionnaire.questions[1]
+    assert scale_question.kind == "scale"
+    assert scale_question.min_value == 1
+    assert scale_question.max_value == 5
+
+
+def test_parse_agent_turn_response_normalizes_optimized_prompt_alias() -> None:
+    response = codex_agent_provider.parse_agent_turn_response(
+        """
+        {
+          "kind": "prompt_optimization",
+          "message": "Done.",
+          "final_prompt": "cinematic portrait, soft rim light",
+          "title": "Cinematic portrait"
+        }
+        """
+    )
+
+    assert response.kind == "optimized_prompt"
+    assert response.message == "Done."
+    assert response.optimized_prompt == "cinematic portrait, soft rim light"
+    assert response.prompt_version_title == "Cinematic portrait"

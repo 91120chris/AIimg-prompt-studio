@@ -63,6 +63,12 @@ def _json(value: object) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True)
 
 
+def _context_text(value: str, *, include: bool, label: str) -> str:
+    if include:
+        return value
+    return f"[{label} context hidden by user.]"
+
+
 def _structured_http_error(status_code: int, error: StructuredError) -> HTTPException:
     return HTTPException(status_code=status_code, detail=error.model_dump())
 
@@ -327,7 +333,11 @@ def answer_questionnaire(
             )
         )
 
-        original_prompt = _get_latest_prompt_text(db, payload.session_id)
+        original_prompt = _context_text(
+            _get_latest_prompt_text(db, payload.session_id),
+            include=payload.include_original_prompt_context,
+            label="Original prompt",
+        )
         response = _run_agent(
             settings,
             build_optimization_prompt(original_prompt, questionnaire, payload),
@@ -360,8 +370,16 @@ def create_feedback_questionnaire(
         job = _get_succeeded_generation_job(db, payload.session_id, payload.job_id)
         images = _get_generated_images(db, payload.session_id)
 
-        original_prompt = _get_latest_prompt_text(db, payload.session_id)
-        optimized_prompt = _get_latest_optimized_prompt_text(db, payload.session_id)
+        original_prompt = _context_text(
+            _get_latest_prompt_text(db, payload.session_id),
+            include=payload.include_original_prompt_context,
+            label="Original prompt",
+        )
+        optimized_prompt = _context_text(
+            _get_latest_optimized_prompt_text(db, payload.session_id),
+            include=payload.include_optimized_prompt_context,
+            label="Optimized prompt",
+        )
         response = _run_questionnaire_agent(
             settings,
             build_feedback_questionnaire_prompt(
@@ -413,8 +431,16 @@ def refine_prompt_from_feedback(
             )
         )
 
-        original_prompt = _get_latest_prompt_text(db, payload.session_id)
-        previous_optimized_prompt = _get_latest_optimized_prompt_text(db, payload.session_id)
+        original_prompt = _context_text(
+            _get_latest_prompt_text(db, payload.session_id),
+            include=payload.include_original_prompt_context,
+            label="Original prompt",
+        )
+        previous_optimized_prompt = _context_text(
+            _get_latest_optimized_prompt_text(db, payload.session_id),
+            include=payload.include_optimized_prompt_context,
+            label="Optimized prompt",
+        )
         response = _run_agent(
             settings,
             build_feedback_refinement_prompt(

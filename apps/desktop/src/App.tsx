@@ -246,6 +246,8 @@ function App() {
   const [guidance, setGuidance] = useState(3.5);
   const [originalPrompt, setOriginalPrompt] = useState("");
   const [optimizedPrompt, setOptimizedPrompt] = useState("");
+  const [includeOriginalPromptContext, setIncludeOriginalPromptContext] = useState(true);
+  const [includeOptimizedPromptContext, setIncludeOptimizedPromptContext] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [managerOpen, setManagerOpen] = useState(false);
@@ -519,6 +521,13 @@ function App() {
     return {
       provider: agentProvider,
       ollama_model: ollamaModels.selected_model,
+    };
+  }
+
+  function agentContextPayload() {
+    return {
+      include_original_prompt_context: includeOriginalPromptContext,
+      include_optimized_prompt_context: includeOptimizedPromptContext,
     };
   }
 
@@ -856,6 +865,7 @@ function App() {
           original_prompt: prompt,
           mode: workflowMode,
           ...agentProviderPayload(),
+          ...agentContextPayload(),
         }),
       });
       if (!response.ok) {
@@ -897,6 +907,7 @@ function App() {
             questionnaire_id: questionnaire.questionnaire_id,
             ...(isFeedbackQuestionnaire ? { job_id: feedbackQuestionnaireContext.jobId } : {}),
             ...agentProviderPayload(),
+            ...agentContextPayload(),
             answers,
           }),
         },
@@ -930,6 +941,7 @@ function App() {
           session_id: job.session_id,
           job_id: job.job_id,
           ...agentProviderPayload(),
+          ...agentContextPayload(),
         }),
       });
       if (!response.ok) {
@@ -1672,6 +1684,24 @@ function App() {
                 {workflowMode.toUpperCase()} / {imageProvider} / Seed {seed || "隨機"}
               </p>
               {generationMessage ? <p className="generation-note">{generationMessage}</p> : null}
+              <div className="context-toggles" aria-label="Agent context">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={includeOriginalPromptContext}
+                    onChange={(event) => setIncludeOriginalPromptContext(event.target.checked)}
+                  />
+                  原始 prompt 給 LLM
+                </label>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={includeOptimizedPromptContext}
+                    onChange={(event) => setIncludeOptimizedPromptContext(event.target.checked)}
+                  />
+                  上版最佳化 prompt 給 LLM
+                </label>
+              </div>
               {generationJob ? (
                 <p className="generation-note">
                   Job {generationJob.job_id} / {generationJob.status}

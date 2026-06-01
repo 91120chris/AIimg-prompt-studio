@@ -691,6 +691,29 @@ p {
   overflow-wrap: anywhere;
 }
 
+.context-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-top: 8px;
+}
+
+.context-toggles label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #435566;
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.context-toggles input {
+  width: 16px;
+  min-width: 16px;
+  height: 16px;
+  min-height: 16px;
+}
+
 .image-stage {
   display: grid;
   min-height: 0;

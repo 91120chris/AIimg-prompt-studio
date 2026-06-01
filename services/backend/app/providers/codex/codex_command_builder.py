@@ -15,6 +15,60 @@ def build_codex_exec_command(
     skip_git_repo_check: bool = False,
     output_schema_path: str | Path | None = None,
     config_overrides: dict[str, CodexConfigValue] | None = None,
+    json_output: bool = False,
+) -> list[str]:
+    command = _base_codex_exec_command(
+        binary,
+        model=model,
+        sandbox=sandbox,
+        config_overrides=config_overrides,
+    )
+    command.append("exec")
+    if skip_git_repo_check:
+        command.append("--skip-git-repo-check")
+    if output_schema_path is not None:
+        command.extend(["--output-schema", str(output_schema_path)])
+    if json_output:
+        command.append("--json")
+    command.append(prompt)
+    return command
+
+
+def build_codex_exec_resume_command(
+    binary: ResolvedCodexBinary,
+    session_id: str,
+    prompt: str,
+    *,
+    model: str | None = None,
+    sandbox: str | None = None,
+    skip_git_repo_check: bool = False,
+    output_schema_path: str | Path | None = None,
+    config_overrides: dict[str, CodexConfigValue] | None = None,
+    json_output: bool = False,
+) -> list[str]:
+    command = _base_codex_exec_command(
+        binary,
+        model=model,
+        sandbox=sandbox,
+        config_overrides=config_overrides,
+    )
+    command.extend(["exec", "resume"])
+    if skip_git_repo_check:
+        command.append("--skip-git-repo-check")
+    if output_schema_path is not None:
+        command.extend(["--output-schema", str(output_schema_path)])
+    if json_output:
+        command.append("--json")
+    command.extend([session_id, prompt])
+    return command
+
+
+def _base_codex_exec_command(
+    binary: ResolvedCodexBinary,
+    *,
+    model: str | None = None,
+    sandbox: str | None = None,
+    config_overrides: dict[str, CodexConfigValue] | None = None,
 ) -> list[str]:
     command = [
         *binary.command_prefix,
@@ -27,12 +81,6 @@ def build_codex_exec_command(
         command.extend(["--model", model])
     if sandbox:
         command.extend(["--sandbox", sandbox])
-    command.append("exec")
-    if skip_git_repo_check:
-        command.append("--skip-git-repo-check")
-    if output_schema_path is not None:
-        command.extend(["--output-schema", str(output_schema_path)])
-    command.append(prompt)
     return command
 
 

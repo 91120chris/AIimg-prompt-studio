@@ -1,6 +1,7 @@
 from app.providers.codex.codex_binary_resolver import ResolvedCodexBinary
 from app.providers.codex.codex_command_builder import (
     build_codex_exec_command,
+    build_codex_exec_resume_command,
     build_codex_image_exec_command,
 )
 
@@ -71,3 +72,27 @@ def test_codex_exec_command_adds_config_overrides_before_exec() -> None:
     assert all(index < exec_index for index in config_indices)
     assert 'model_reasoning_effort="xhigh"' in command
     assert 'model_verbosity="high"' in command
+
+
+def test_codex_exec_command_can_request_json_events() -> None:
+    command = build_codex_exec_command(fake_binary(), "-", json_output=True)
+
+    exec_index = command.index("exec")
+    assert "--json" in command[exec_index:]
+    assert command[-1] == "-"
+
+
+def test_codex_resume_command_targets_saved_session() -> None:
+    command = build_codex_exec_resume_command(
+        fake_binary(),
+        "019e8426-42bc-7122-bce0-608dc8f5bb00",
+        "-",
+        output_schema_path="schema.json",
+        json_output=True,
+    )
+
+    exec_index = command.index("exec")
+    assert command[exec_index + 1] == "resume"
+    assert "--output-schema" in command[exec_index:]
+    assert "--json" in command[exec_index:]
+    assert command[-2:] == ["019e8426-42bc-7122-bce0-608dc8f5bb00", "-"]

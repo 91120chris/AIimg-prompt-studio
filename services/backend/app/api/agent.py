@@ -20,6 +20,7 @@ from app.core.questionnaire_engine import (
 from app.core.session_workspace import new_id
 from app.db.models import (
     AgentTurnRecord,
+    CodexConversationRecord,
     GeneratedImageRecord,
     GenerationJobRecord,
     PromptRecord,
@@ -73,19 +74,48 @@ def _structured_http_error(status_code: int, error: StructuredError) -> HTTPExce
     return HTTPException(status_code=status_code, detail=error.model_dump())
 
 
-def _run_codex_agent(runner: CodexAgentRunner, prompt: str, payload) -> AgentTurnResponse:
-    return runner.run(
-        prompt,
-        model=payload.codex_model,
-        reasoning_effort=payload.codex_reasoning_effort,
-        reasoning_summary=payload.codex_reasoning_summary,
-        verbosity=payload.codex_verbosity,
-    )
+def _codex_conversation_id(db, session_id: str) -> str | None:
+    record = db.get(CodexConversationRecord, session_id)
+    return record.codex_session_id if record is not None else None
 
 
-def _run_agent(settings: Settings, prompt: str, payload: AgentRequestPayload) -> AgentTurnResponse:
+def _save_codex_conversation_id(db, session_id: str, codex_session_id: str | None) -> None:
+    if not codex_session_id:
+        return
+    record = db.get(CodexConversationRecord, session_id)
+    if record is None:
+        db.add(
+            CodexConversationRecord(
+                session_id=session_id,
+                codex_session_id=codex_session_id,
+            )
+        )
+        return
+    record.codex_session_id = codex_session_id
+
+
+def _run_agent(
+    settings: Settings,
+    prompt: str,
+    payload: AgentRequestPayload,
+    *,
+    db=None,
+) -> AgentTurnResponse:
     if payload.provider == "codex_cli":
-        return _run_codex_agent(CodexAgentRunner(settings), prompt, payload)
+        runner = CodexAgentRunner(settings)
+        response = runner.run(
+            prompt,
+            model=payload.codex_model,
+            reasoning_effort=payload.codex_reasoning_effort,
+            reasoning_summary=payload.codex_reasoning_summary,
+            verbosity=payload.codex_verbosity,
+            codex_session_id=(
+                _codex_conversation_id(db, payload.session_id) if db is not None else None
+            ),
+        )
+        if db is not None:
+            _save_codex_conversation_id(db, payload.session_id, runner.last_codex_session_id)
+        return response
     if payload.provider == "ollama_local_llm":
         return OllamaAgentRunner(settings).run(prompt, model=payload.ollama_model)
     raise _structured_http_error(
@@ -106,9 +136,11 @@ def _run_questionnaire_agent(
     settings: Settings,
     prompt: str,
     payload: AgentTurnRequest | AgentFeedbackQuestionnaireRequest,
+    *,
+    db=None,
 ) -> AgentTurnResponse:
     try:
-        response = _run_agent(settings, prompt, payload)
+        response = _run_agent(settings, prompt, payload, db=db)
     except Exception as error:
         return fallback_text_questionnaire(_provider_label(payload), str(error))
 
@@ -293,6 +325,7 @@ def create_agent_turn(payload: AgentTurnRequest, request: Request) -> AgentTurnR
             settings,
             build_questionnaire_prompt(payload),
             payload,
+            db=db,
         )
         response = _ensure_unique_questionnaire_id(db, response)
         _store_agent_turn(db, payload.session_id, response)
@@ -342,6 +375,7 @@ def answer_questionnaire(
             settings,
             build_optimization_prompt(original_prompt, questionnaire, payload),
             payload,
+            db=db,
         )
         response = _ensure_unique_questionnaire_id(db, response)
         _store_agent_turn(db, payload.session_id, response)
@@ -389,6 +423,7 @@ def create_feedback_questionnaire(
                 generated_images=_generated_image_payloads(images),
             ),
             payload,
+            db=db,
         )
         response = _ensure_unique_questionnaire_id(db, response)
         _store_agent_turn(db, payload.session_id, response)
@@ -452,6 +487,7 @@ def refine_prompt_from_feedback(
                 generated_images=_generated_image_payloads(images),
             ),
             payload,
+            db=db,
         )
         response = _ensure_unique_questionnaire_id(db, response)
         _store_agent_turn(db, payload.session_id, response)

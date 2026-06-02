@@ -246,6 +246,7 @@ function App() {
   const [guidance, setGuidance] = useState(3.5);
   const [originalPrompt, setOriginalPrompt] = useState("");
   const [optimizedPrompt, setOptimizedPrompt] = useState("");
+  const [usePersistentCodexSession, setUsePersistentCodexSession] = useState(true);
   const [includeOriginalPromptContext, setIncludeOriginalPromptContext] = useState(true);
   const [includeOptimizedPromptContext, setIncludeOptimizedPromptContext] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -282,6 +283,7 @@ function App() {
   const [answerDrafts, setAnswerDrafts] = useState<AnswerDrafts>({});
   const [agentBusy, setAgentBusy] = useState(false);
   const [agentMessage, setAgentMessage] = useState<string | null>(null);
+  const [codexConversationResetBusy, setCodexConversationResetBusy] = useState(false);
   const [generationJob, setGenerationJob] = useState<GenerationJobResponse | null>(null);
   const [generationBusy, setGenerationBusy] = useState(false);
   const [generationMessage, setGenerationMessage] = useState<string | null>(null);
@@ -526,6 +528,7 @@ function App() {
 
   function agentContextPayload() {
     return {
+      use_persistent_codex_session: usePersistentCodexSession,
       include_original_prompt_context: includeOriginalPromptContext,
       include_optimized_prompt_context: includeOptimizedPromptContext,
     };
@@ -792,6 +795,30 @@ function App() {
 
   async function ensureSession(): Promise<SessionResponse> {
     return currentSession ?? createSession();
+  }
+
+  async function resetCodexConversation() {
+    if (!currentSession) {
+      setErrorMessage("請先建立或選取工作階段。");
+      return;
+    }
+
+    setCodexConversationResetBusy(true);
+    setErrorMessage(null);
+    try {
+      const response = await fetch(
+        `${backendBaseUrl}/agent/codex-conversation/${currentSession.session_id}`,
+        { method: "DELETE" },
+      );
+      if (!response.ok) {
+        throw new Error(await readErrorMessage(response));
+      }
+      setAgentMessage("已重開 Codex 對話，下一次 Codex 回合會從新的 Codex session 開始。");
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "無法重開 Codex 對話");
+    } finally {
+      setCodexConversationResetBusy(false);
+    }
   }
 
   async function uploadReferenceImage(slot: number, file: File | null) {
@@ -1685,13 +1712,41 @@ function App() {
               </p>
               {generationMessage ? <p className="generation-note">{generationMessage}</p> : null}
               <div className="context-toggles" aria-label="Agent context">
+                {isCodexAgent ? (
+                  <>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={usePersistentCodexSession}
+                        onChange={(event) => setUsePersistentCodexSession(event.target.checked)}
+                      />
+                      Codex 持久對話
+                    </label>
+                    <button
+                      className="context-reset-button"
+                      type="button"
+                      disabled={
+                        !currentSession ||
+                        agentBusy ||
+                        codexConversationResetBusy ||
+                        backendStatus !== "connected"
+                      }
+                      onClick={() => {
+                        void resetCodexConversation();
+                      }}
+                    >
+                      <RefreshCcw size={13} aria-hidden="true" />
+                      {codexConversationResetBusy ? "重開中" : "重開對話"}
+                    </button>
+                  </>
+                ) : null}
                 <label>
                   <input
                     type="checkbox"
                     checked={includeOriginalPromptContext}
                     onChange={(event) => setIncludeOriginalPromptContext(event.target.checked)}
                   />
-                  原始 prompt 給 LLM
+                  本回合附加原始 prompt
                 </label>
                 <label>
                   <input
@@ -1699,7 +1754,7 @@ function App() {
                     checked={includeOptimizedPromptContext}
                     onChange={(event) => setIncludeOptimizedPromptContext(event.target.checked)}
                   />
-                  上版最佳化 prompt 給 LLM
+                  本回合附加上版最佳化 prompt
                 </label>
               </div>
               {generationJob ? (

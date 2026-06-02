@@ -116,7 +116,7 @@ $env:RUN_CODEX_SMOKE="1"; uv run pytest -m codex_smoke
 - Do not paste Hugging Face tokens into source files.
 - If a token was exposed, rotate it in Hugging Face settings.
 - This app does not require an OpenAI API key.
-- Codex CLI is the primary agent provider. The current loop can ask Codex for a schema-validated questionnaire, produce an optimized prompt, generate an image after explicit confirmation, ask for post-generation feedback, and refine the next prompt version from that feedback. Agent turns store the Codex CLI session id in SQLite and resume that exact session on later Codex turns for the same app session.
+- Codex CLI is the primary agent provider. The current loop can ask Codex for a schema-validated questionnaire, produce an optimized prompt, generate an image after explicit confirmation, ask for post-generation feedback, and refine the next prompt version from that feedback. Agent turns can store the Codex CLI session id in SQLite and resume that exact session on later Codex turns for the same app session. The desktop UI also exposes a persistent conversation toggle, per-turn prompt attachment toggles, and a reset action that starts the next Codex turn from a fresh CLI session.
 - Ollama is the local fallback agent provider. The desktop shell reads installed Ollama models live from `/api/tags`, lets you choose the current local model, and uses `/api/generate` with structured output schema for questionnaire, prompt optimization, feedback questionnaire, and refinement turns.
 - If a questionnaire creation turn fails because the provider returns an error, or if an agent response fails strict schema validation even after one repair attempt, the backend returns a safe single-question text questionnaire so the user can continue manually instead of losing the flow.
 - The Manager drawer now reads local model status, skill versions, template versions, and recent logs from backend APIs. It can show FLUX/Hugging Face readiness, set a FLUX model path through the Tauri folder picker or manual browser fallback, mark FLUX install pending when `HF_TOKEN` is configured, and unload the FLUX placeholder without exposing the token or full local model path. Patch proposal endpoints currently record and approve/reject proposals only; applying content diffs is a later milestone.
@@ -165,6 +165,7 @@ $env:RUN_CODEX_SMOKE="1"; uv run pytest -m codex_smoke
 - `GET /sessions/{session_id}/reference-images`
 - `GET /sessions/{session_id}/generated-images`
 - `POST /agent/turn`
+- `DELETE /agent/codex-conversation/{session_id}`
 - `POST /agent/answer-questionnaire`
 - `POST /agent/feedback-questionnaire`
 - `POST /agent/refine`

@@ -714,6 +714,20 @@ p {
   min-height: 16px;
 }
 
+.context-reset-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 24px;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #2d4050;
+  padding: 0 8px;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
 .image-stage {
   display: grid;
   min-height: 0;

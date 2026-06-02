@@ -103,6 +103,7 @@ def _run_agent(
 ) -> AgentTurnResponse:
     if payload.provider == "codex_cli":
         runner = CodexAgentRunner(settings)
+        use_persistent_session = payload.use_persistent_codex_session
         response = runner.run(
             prompt,
             model=payload.codex_model,
@@ -110,10 +111,12 @@ def _run_agent(
             reasoning_summary=payload.codex_reasoning_summary,
             verbosity=payload.codex_verbosity,
             codex_session_id=(
-                _codex_conversation_id(db, payload.session_id) if db is not None else None
+                _codex_conversation_id(db, payload.session_id)
+                if db is not None and use_persistent_session
+                else None
             ),
         )
-        if db is not None:
+        if db is not None and use_persistent_session:
             _save_codex_conversation_id(db, payload.session_id, runner.last_codex_session_id)
         return response
     if payload.provider == "ollama_local_llm":
@@ -331,6 +334,26 @@ def create_agent_turn(payload: AgentTurnRequest, request: Request) -> AgentTurnR
         _store_agent_turn(db, payload.session_id, response)
         db.commit()
         return response
+
+
+@router.delete("/codex-conversation/{session_id}", response_model=dict[str, str])
+def reset_codex_conversation(session_id: str, request: Request) -> dict[str, str]:
+    with new_session(_engine(request)) as db:
+        if db.get(SessionRecord, session_id) is None:
+            raise _structured_http_error(
+                404,
+                StructuredError(
+                    code="session_not_found",
+                    message="找不到指定的 session。",
+                    suggestion="請先建立或選取一個 session。",
+                ),
+            )
+
+        record = db.get(CodexConversationRecord, session_id)
+        if record is not None:
+            db.delete(record)
+        db.commit()
+        return {"status": "ok"}
 
 
 @router.post("/answer-questionnaire", response_model=AgentTurnResponse)

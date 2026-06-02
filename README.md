@@ -2,6 +2,8 @@
 
 [English version](README.en.md)
 
+![AIimg Prompt Studio screenshot](Screenshot%20studio.png)
+
 AIimg Prompt Studio 是一個 local-first 的桌面 prompt optimization studio。它把 Tauri + React 桌面介面、FastAPI 後端、Codex/Ollama agent loop、SQLite session storage、Local Flux 圖像生成工作流整合在同一個 monorepo 裡。目標是讓使用者能在本機完成 T2I / I2I prompt 優化、圖片生成、回饋修正，以及把成功或失敗經驗整理成可重用的 Template / Skill 提案。
 
 目前狀態：

@@ -1,0 +1,38 @@
+{
+  "id": "story-illustration",
+  "name": "Story Illustration",
+  "applies_to": ["t2i", "i2i"],
+  "description": "Narrative images for scenes, covers, concept art, and sequential story moments.",
+  "questions": [
+    {
+      "id": "scene",
+      "type": "textarea",
+      "label": "Scene",
+      "required": true
+    },
+    {
+      "id": "characters",
+      "type": "textarea",
+      "label": "Characters",
+      "required": false
+    },
+    {
+      "id": "visual_style",
+      "type": "single_choice",
+      "label": "Visual style",
+      "options": ["storybook", "cinematic", "anime", "watercolor", "graphic novel"],
+      "required": false
+    },
+    {
+      "id": "moment",
+      "type": "single_choice",
+      "label": "Story moment",
+      "options": ["quiet setup", "turning point", "action beat", "emotional close-up"],
+      "required": false
+    }
+  ],
+  "prompt_structure": {
+    "must_include": ["setting", "characters", "action", "mood", "lighting", "style"],
+    "avoid": ["unclear focal point", "conflicting art directions"]
+  }
+}

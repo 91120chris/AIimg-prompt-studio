@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from sqlalchemy import Engine
+from sqlalchemy import Engine, inspect, text
 from sqlmodel import SQLModel, Session, create_engine
 
 from app.db import models as _models  # noqa: F401
@@ -24,7 +24,33 @@ def create_db_engine(settings: Settings) -> Engine:
 
 def init_db(engine: Engine) -> None:
     SQLModel.metadata.create_all(engine)
+    _ensure_registry_patch_columns(engine)
 
 
 def new_session(engine: Engine) -> Session:
     return Session(engine)
+
+
+def _ensure_registry_patch_columns(engine: Engine) -> None:
+    inspector = inspect(engine)
+    table_names = set(inspector.get_table_names())
+    if "registry_patch_proposals" not in table_names:
+        return
+
+    existing_columns = {
+        column["name"] for column in inspector.get_columns("registry_patch_proposals")
+    }
+    columns_to_add = {
+        "target_id": "TEXT",
+        "proposed_content": "TEXT",
+        "applied_version_id": "TEXT",
+    }
+    with engine.begin() as connection:
+        for column_name, column_type in columns_to_add.items():
+            if column_name not in existing_columns:
+                connection.execute(
+                    text(
+                        "ALTER TABLE registry_patch_proposals "
+                        f"ADD COLUMN {column_name} {column_type}"
+                    )
+                )

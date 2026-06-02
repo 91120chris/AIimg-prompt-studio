@@ -1,0 +1,38 @@
+{
+  "id": "advertising-product-hero",
+  "name": "Advertising Product Hero Visual",
+  "applies_to": ["t2i", "i2i"],
+  "description": "Product-centered commercial hero image for ads, launches, and store banners.",
+  "questions": [
+    {
+      "id": "product_type",
+      "type": "text",
+      "label": "Product type",
+      "required": true
+    },
+    {
+      "id": "brand_constraints",
+      "type": "textarea",
+      "label": "Brand, logo, or text constraints",
+      "required": false
+    },
+    {
+      "id": "visual_mood",
+      "type": "single_choice",
+      "label": "Visual mood",
+      "options": ["premium", "playful", "minimal", "bold", "natural"],
+      "required": false
+    },
+    {
+      "id": "composition",
+      "type": "single_choice",
+      "label": "Composition",
+      "options": ["center hero", "lifestyle scene", "flat lay", "close-up macro"],
+      "required": false
+    }
+  ],
+  "prompt_structure": {
+    "must_include": ["product identity", "composition", "lighting", "background", "material detail"],
+    "avoid": ["unprovided brand claims", "unreadable text", "extra products"]
+  }
+}

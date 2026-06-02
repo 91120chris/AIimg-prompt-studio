@@ -1,0 +1,32 @@
+{
+  "id": "academic-educational-image",
+  "name": "Academic / Educational Image",
+  "applies_to": ["t2i"],
+  "description": "Clear explanatory visuals for learning material, diagrams, and classroom use.",
+  "questions": [
+    {
+      "id": "topic",
+      "type": "text",
+      "label": "Topic",
+      "required": true
+    },
+    {
+      "id": "audience_level",
+      "type": "single_choice",
+      "label": "Audience level",
+      "options": ["children", "high school", "undergraduate", "professional"],
+      "required": false
+    },
+    {
+      "id": "diagram_style",
+      "type": "single_choice",
+      "label": "Diagram style",
+      "options": ["labeled illustration", "infographic", "clean diagram", "realistic educational visual"],
+      "required": false
+    }
+  ],
+  "prompt_structure": {
+    "must_include": ["subject accuracy", "clear layout", "visual hierarchy", "legible labels if requested"],
+    "avoid": ["unsupported scientific claims", "crowded composition", "decorative clutter"]
+  }
+}

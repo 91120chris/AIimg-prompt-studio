@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Request
 from sqlmodel import select
 
+from app.core.registry_store import apply_registry_patch_proposal
 from app.core.session_workspace import new_id
 from app.db.models import RegistryPatchProposalRecord, SkillVersionRecord
 from app.db.session import new_session
@@ -21,8 +22,11 @@ def _proposal_response(record: RegistryPatchProposalRecord) -> RegistryPatchProp
     return RegistryPatchProposalResponse(
         proposal_id=record.proposal_id,
         registry_kind="skill",
+        item_id=record.target_id,
         status=record.status,
         diff_text=record.diff_text,
+        proposed_content=record.proposed_content,
+        applied_version_id=record.applied_version_id,
         created_at=record.created_at,
     )
 
@@ -35,6 +39,13 @@ def _item_response(record: SkillVersionRecord) -> RegistryItemResponse:
         content=record.content,
         created_at=record.created_at,
     )
+
+
+def _clean_optional_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    stripped = value.strip()
+    return stripped or None
 
 
 @router.get("", response_model=list[RegistryItemResponse])
@@ -50,6 +61,17 @@ def list_skills(request: Request) -> list[RegistryItemResponse]:
         for record in records:
             latest_by_id[record.skill_id] = record
         return [_item_response(record) for record in latest_by_id.values()]
+
+
+@router.get("/patch-proposals", response_model=list[RegistryPatchProposalResponse])
+def list_skill_patch_proposals(request: Request) -> list[RegistryPatchProposalResponse]:
+    with new_session(_engine(request)) as db:
+        records = db.exec(
+            select(RegistryPatchProposalRecord)
+            .where(RegistryPatchProposalRecord.registry_kind == "skill")
+            .order_by(RegistryPatchProposalRecord.created_at.desc())
+        ).all()
+        return [_proposal_response(record) for record in records]
 
 
 @router.get("/{skill_id}", response_model=RegistryItemResponse)
@@ -82,12 +104,32 @@ def create_skill_patch_proposal(
             status_code=422,
             detail={"code": "empty_patch_proposal", "message": "Patch proposal cannot be empty."},
         )
+    target_id = _clean_optional_text(payload.item_id)
+    if payload.proposed_content is not None:
+        if not payload.proposed_content.strip():
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "empty_proposed_content",
+                    "message": "Proposed content cannot be empty.",
+                },
+            )
+        if target_id is None:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "missing_registry_item_id",
+                    "message": "item_id is required when proposed_content is provided.",
+                },
+            )
     with new_session(_engine(request)) as db:
         record = RegistryPatchProposalRecord(
             proposal_id=new_id("proposal"),
             registry_kind="skill",
+            target_id=target_id,
             status="pending",
             diff_text=diff_text,
+            proposed_content=payload.proposed_content,
         )
         db.add(record)
         db.commit()
@@ -117,6 +159,16 @@ def _update_proposal_status(
                 status_code=404,
                 detail={"code": "proposal_not_found", "message": "Patch proposal not found."},
             )
+        if record.status != "pending":
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "proposal_already_closed",
+                    "message": "Patch proposal is already closed.",
+                },
+            )
+        if status == "approved":
+            apply_registry_patch_proposal(db, record)
         record.status = status
         db.add(record)
         db.commit()

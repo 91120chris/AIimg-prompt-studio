@@ -1,0 +1,32 @@
+{
+  "id": "portrait-photography",
+  "name": "Portrait Photography",
+  "applies_to": ["t2i", "i2i"],
+  "description": "Portrait-focused prompt structure for people, characters, styling, lighting, and camera language.",
+  "questions": [
+    {
+      "id": "subject",
+      "type": "text",
+      "label": "Subject",
+      "required": true
+    },
+    {
+      "id": "shot_type",
+      "type": "single_choice",
+      "label": "Shot type",
+      "options": ["headshot", "half body", "full body", "environmental portrait"],
+      "required": false
+    },
+    {
+      "id": "lighting",
+      "type": "single_choice",
+      "label": "Lighting",
+      "options": ["soft studio", "window light", "cinematic contrast", "natural outdoor"],
+      "required": false
+    }
+  ],
+  "prompt_structure": {
+    "must_include": ["subject description", "pose", "wardrobe", "lighting", "camera/framing"],
+    "avoid": ["unprovided real person identity", "distorted hands", "extra limbs"]
+  }
+}

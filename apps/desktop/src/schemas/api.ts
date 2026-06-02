@@ -222,6 +222,17 @@ export const registryItemResponseSchema = z.object({
   created_at: z.string().nullable(),
 });
 
+export const registryPatchProposalResponseSchema = z.object({
+  proposal_id: z.string(),
+  registry_kind: z.enum(["skill", "template"]),
+  item_id: z.string().nullable(),
+  status: z.enum(["pending", "approved", "rejected"]),
+  diff_text: z.string(),
+  proposed_content: z.string().nullable(),
+  applied_version_id: z.string().nullable(),
+  created_at: z.string(),
+});
+
 export const modelInfoResponseSchema = z.object({
   provider: z.string(),
   label: z.string(),
@@ -251,6 +262,7 @@ export const logResponseSchema = z.object({
 });
 
 export const registryItemsResponseSchema = z.array(registryItemResponseSchema);
+export const registryPatchProposalsResponseSchema = z.array(registryPatchProposalResponseSchema);
 export const modelInfoListResponseSchema = z.array(modelInfoResponseSchema);
 export const logsResponseSchema = z.array(logResponseSchema);
 
@@ -268,6 +280,7 @@ export type Questionnaire = z.infer<typeof questionnaireSchema>;
 export type ReferenceImageResponse = z.infer<typeof referenceImageResponseSchema>;
 export type SessionResponse = z.infer<typeof sessionResponseSchema>;
 export type RegistryItemResponse = z.infer<typeof registryItemResponseSchema>;
+export type RegistryPatchProposalResponse = z.infer<typeof registryPatchProposalResponseSchema>;
 export type ModelInfoResponse = z.infer<typeof modelInfoResponseSchema>;
 export type FluxReadinessResponse = z.infer<typeof fluxReadinessResponseSchema>;
 export type LogResponse = z.infer<typeof logResponseSchema>;

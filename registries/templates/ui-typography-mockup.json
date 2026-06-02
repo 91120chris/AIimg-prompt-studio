@@ -1,0 +1,32 @@
+{
+  "id": "ui-typography-mockup",
+  "name": "UI / Typography Mockup",
+  "applies_to": ["t2i", "i2i"],
+  "description": "Mockups, layouts, posters, app screens, and typography-heavy visual concepts.",
+  "questions": [
+    {
+      "id": "format",
+      "type": "single_choice",
+      "label": "Format",
+      "options": ["mobile screen", "desktop screen", "poster", "social post", "packaging label"],
+      "required": true
+    },
+    {
+      "id": "exact_text",
+      "type": "textarea",
+      "label": "Exact text to show",
+      "required": false
+    },
+    {
+      "id": "style",
+      "type": "single_choice",
+      "label": "Style",
+      "options": ["minimal", "editorial", "technical", "playful", "luxury"],
+      "required": false
+    }
+  ],
+  "prompt_structure": {
+    "must_include": ["layout", "hierarchy", "typography direction", "spacing", "color palette"],
+    "avoid": ["fake unreadable copy when exact text is required", "overcrowded panels"]
+  }
+}

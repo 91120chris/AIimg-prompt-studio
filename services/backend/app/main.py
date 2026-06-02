@@ -12,6 +12,7 @@ from app.api.settings import router as settings_router
 from app.api.skills import router as skills_router
 from app.api.templates import router as templates_router
 from app.core.app_settings_store import load_persisted_app_settings
+from app.core.registry_store import seed_initial_registries
 from app.cors import configure_cors
 from app.db.session import create_db_engine, init_db
 from app.schemas import HealthResponse
@@ -24,6 +25,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = app_settings
     app.state.engine = create_db_engine(app_settings)
     init_db(app.state.engine)
+    seed_initial_registries(app.state.engine)
     if settings is None or app_settings.load_persisted_settings:
         load_persisted_app_settings(app.state.engine, app_settings)
     configure_cors(app, app_settings)

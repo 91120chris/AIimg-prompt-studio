@@ -32,3 +32,8 @@ def test_database_includes_required_tables(tmp_path) -> None:
         "app_settings",
         "logs",
     }.issubset(table_names)
+
+    patch_columns = {
+        column["name"] for column in inspect(app.state.engine).get_columns("registry_patch_proposals")
+    }
+    assert {"target_id", "proposed_content", "applied_version_id"}.issubset(patch_columns)

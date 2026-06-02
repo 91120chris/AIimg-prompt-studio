@@ -19,86 +19,98 @@ def make_client(tmp_path, hf_token: str | None = None) -> tuple[object, TestClie
     return app, TestClient(app)
 
 
-def test_flux_status_and_set_path_do_not_return_raw_model_path(tmp_path) -> None:
-    _, client = make_client(tmp_path)
-    model_path = str(tmp_path / "local_models" / "flux-secret-path")
+def test_models_endpoint_reports_local_flux_without_raw_secret(monkeypatch, tmp_path) -> None:
+    from app.api import models
 
-    initial = client.get("/models/flux/status")
-    set_path = client.post("/models/flux/set-path", json={"model_path": model_path})
-    listed = client.get("/models")
+    class FakeLocalFluxClient:
+        def __init__(self, settings):
+            self.settings = settings
 
-    assert initial.status_code == 200
-    assert initial.json()["status"] == "not_installed"
-    assert set_path.status_code == 200
-    payload = set_path.json()
-    assert payload["status"] == "path_selected"
-    assert payload["path_configured"] is True
-    assert payload["path_label"] == "flux-secret-path"
-    assert model_path not in set_path.text
-    assert listed.status_code == 200
-    assert listed.json()[0]["provider"] == "diffusers_flux2_klein_9b_fp8"
-    assert model_path not in listed.text
+        def get_system_stats(self):
+            return {"system": "ok"}
 
-
-def test_flux_install_and_unload_update_status(tmp_path) -> None:
-    _, client = make_client(tmp_path, hf_token="hf_test_token")
-
-    install = client.post("/models/flux/install")
-    unload = client.post("/models/flux/unload")
-
-    assert install.status_code == 200
-    assert install.json()["status"] == "install_pending"
-    assert unload.status_code == 200
-    assert unload.json()["status"] == "unloaded"
-
-
-def test_flux_readiness_does_not_return_hf_token_or_raw_path(tmp_path) -> None:
+    monkeypatch.setattr(models, "LocalFluxClient", FakeLocalFluxClient)
     _, client = make_client(tmp_path, hf_token="hf_secret_token")
-    model_path = str(tmp_path / "local_models" / "private-flux")
 
-    client.post("/models/flux/set-path", json={"model_path": model_path})
-    readiness = client.get("/models/flux/readiness")
+    response = client.get("/models")
 
-    assert readiness.status_code == 200
-    payload = readiness.json()
-    assert payload["hf_token_configured"] is True
-    assert payload["can_queue_install"] is True
-    assert payload["path_configured"] is True
-    assert payload["path_label"] == "private-flux"
-    assert "hf_secret_token" not in readiness.text
-    assert model_path not in readiness.text
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload[0]["provider"] == "local_flux"
+    assert payload[0]["status"] == "available"
+    assert payload[0]["path_label"] == "flux-2-klein-9b-fp8mixed.safetensors"
+    assert "hf_secret_token" not in response.text
 
 
-def test_flux_install_requires_hf_token(tmp_path) -> None:
+def test_local_flux_settings_patch_persists_and_returns_editable_paths(tmp_path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'app.sqlite3'}"
+    client = TestClient(
+        create_app(
+            Settings(
+                storage_root=str(tmp_path / "storage"),
+                database_url=database_url,
+                load_persisted_settings=True,
+                _env_file=None,
+            )
+        )
+    )
+    model_path = str(tmp_path / "models" / "flux.safetensors")
+
+    response = client.patch(
+        "/providers/local-flux/settings",
+        json={
+            "base_url": "http://127.0.0.1:8189",
+            "model_path": model_path,
+            "steps": 12,
+            "guidance": 4.2,
+            "seed": 123,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["model_path"] == model_path
+
+    restarted_client = TestClient(
+        create_app(
+            Settings(
+                storage_root=str(tmp_path / "storage"),
+                database_url=database_url,
+                load_persisted_settings=True,
+                _env_file=None,
+            )
+        )
+    )
+    persisted = restarted_client.get("/providers/local-flux/settings")
+
+    assert persisted.status_code == 200
+    payload = persisted.json()
+    assert payload["base_url"] == "http://127.0.0.1:8189"
+    assert payload["model_path"] == model_path
+    assert payload["steps"] == 12
+    assert payload["guidance"] == 4.2
+    assert payload["seed"] == 123
+
+
+def test_local_flux_status_handles_offline_backend(monkeypatch, tmp_path) -> None:
+    from app.api import providers
+    from app.providers.local_flux.client import LocalFluxClientError
+
+    class OfflineLocalFluxClient:
+        def __init__(self, settings):
+            self.settings = settings
+
+        def get_system_stats(self):
+            raise LocalFluxClientError("offline")
+
+    monkeypatch.setattr(providers, "LocalFluxClient", OfflineLocalFluxClient)
     _, client = make_client(tmp_path)
 
-    response = client.post("/models/flux/install")
+    response = client.get("/providers/local-flux/status")
 
-    assert response.status_code == 409
-    assert response.json()["detail"]["code"] == "hf_token_required"
-
-
-def test_flux_actions_preserve_path_label_and_write_safe_logs(tmp_path) -> None:
-    _, client = make_client(tmp_path, hf_token="hf_test_token")
-    model_path = str(tmp_path / "local_models" / "private-flux")
-
-    set_path = client.post("/models/flux/set-path", json={"model_path": model_path})
-    install = client.post("/models/flux/install")
-    unload = client.post("/models/flux/unload")
-    logs = client.get("/logs")
-
-    assert set_path.status_code == 200
-    assert install.status_code == 200
-    assert install.json()["path_configured"] is True
-    assert install.json()["path_label"] == "private-flux"
-    assert unload.status_code == 200
-    assert unload.json()["path_configured"] is True
-    assert unload.json()["path_label"] == "private-flux"
-    assert logs.status_code == 200
-    assert "FLUX model path selected: private-flux" in logs.text
-    assert "FLUX install marked as pending." in logs.text
-    assert "FLUX provider unloaded." in logs.text
-    assert model_path not in logs.text
+    assert response.status_code == 200
+    assert response.json()["provider"] == "local_flux"
+    assert response.json()["available"] is False
+    assert response.json()["message"] == "Local Flux 未連線"
 
 
 def test_logs_endpoint_returns_recent_logs(tmp_path) -> None:

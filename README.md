@@ -120,11 +120,11 @@ $env:RUN_CODEX_SMOKE="1"; uv run pytest -m codex_smoke
 - Codex CLI is the primary agent provider. The current loop can ask Codex for a schema-validated questionnaire, produce an optimized prompt, generate an image after explicit confirmation, ask for post-generation feedback, and refine the next prompt version from that feedback.
 - Ollama is the local fallback agent provider. The desktop shell reads installed Ollama models live from `/api/tags`, lets you choose the current local model, and uses `/api/generate` with structured output schema for questionnaire, prompt optimization, feedback questionnaire, and refinement turns.
 - If a questionnaire creation turn fails because the provider returns an error, or if an agent response fails strict schema validation even after one repair attempt, the backend returns a safe single-question text questionnaire so the user can continue manually instead of losing the flow.
-- The Manager drawer now reads local model status, skill versions, template versions, and recent logs from backend APIs. It can show FLUX/Hugging Face readiness, set a FLUX model path through the Tauri folder picker or manual browser fallback, mark FLUX install pending when `HF_TOKEN` is configured, and unload the FLUX placeholder without exposing the token or full local model path. Patch proposal APIs now support reviewable diff text plus optional proposed content; approving a proposal with an item id and proposed content creates a new SQLite-backed skill/template version.
-- Diffusers FLUX support comes after Milestone 1C / Phase 1.
+- The Manager drawer now reads local model status, skill versions, template versions, and recent logs from backend APIs. Local Flux has its own settings drawer beside Settings for server URL, workflow paths, model/VAE/text encoder paths, sampling, image size, seed, validation, and connection tests.
+- Local Flux is the local image provider. It patches the configured Flux workflow and sends it to the local backend API, then stores outputs through the same safe session image URLs as Codex image generation.
 - `CORS_ALLOW_ORIGINS` is comma-separated and parsed with `NoDecode`.
 - `CODEX_MODEL_OPTIONS` is comma-separated and parsed with `NoDecode`.
-- Tauri development requires Rust/Cargo. Install the Rust MSVC toolchain before running `npm run tauri:dev`. The FLUX path picker uses Tauri's official dialog plugin; normal browser preview keeps a manual path fallback.
+- Tauri development requires Rust/Cargo. Install the Rust MSVC toolchain before running `npm run tauri:dev`. Local Flux path pickers use Tauri's official dialog plugin; normal browser preview keeps manual path fallbacks.
 
 ## Implemented Local APIs
 
@@ -137,12 +137,11 @@ $env:RUN_CODEX_SMOKE="1"; uv run pytest -m codex_smoke
 - `GET /providers/ollama/status`
 - `GET /providers/ollama/models`
 - `PATCH /providers/ollama/default-model`
+- `GET /providers/local-flux/status`
+- `GET /providers/local-flux/settings`
+- `PATCH /providers/local-flux/settings`
+- `POST /providers/local-flux/workflows/validate`
 - `GET /models`
-- `GET /models/flux/status`
-- `GET /models/flux/readiness`
-- `POST /models/flux/set-path`
-- `POST /models/flux/install`
-- `POST /models/flux/unload`
 - `GET /settings/safe`
 - `PATCH /settings/safe`
 - `GET /security/secrets/status`

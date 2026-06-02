@@ -54,7 +54,7 @@ export const safeSettingsResponseSchema = z.object({
   backend_host: z.string(),
   backend_port: z.number(),
   selected_agent_provider: z.enum(["codex_cli", "ollama_local_llm"]),
-  selected_image_provider: z.enum(["codex_cli_gpt_image", "diffusers_flux2"]),
+  selected_image_provider: z.enum(["codex_cli_gpt_image", "local_flux"]),
   cors_allow_origins: z.array(z.string()),
   codex_binary_path: z.string(),
   codex_default_model: z.string(),
@@ -243,14 +243,41 @@ export const modelInfoResponseSchema = z.object({
   message: z.string().nullable(),
 });
 
-export const fluxReadinessResponseSchema = z.object({
-  provider: z.literal("diffusers_flux2_klein_9b_fp8"),
-  label: z.string(),
-  hf_token_configured: z.boolean(),
-  hf_cache_configured: z.boolean(),
-  path_configured: z.boolean(),
-  path_label: z.string().nullable(),
-  can_queue_install: z.boolean(),
+export const localFluxStatusResponseSchema = z.object({
+  provider: z.literal("local_flux"),
+  available: z.boolean(),
+  base_url: z.string(),
+  message: z.string(),
+  error: z.string().nullable(),
+});
+
+export const localFluxSettingsResponseSchema = z.object({
+  provider: z.literal("local_flux"),
+  base_url: z.string(),
+  workflow_path: z.string(),
+  i2i_one_workflow_path: z.string(),
+  i2i_two_workflow_path: z.string(),
+  model_path: z.string(),
+  vae_path: z.string(),
+  text_encoder_path: z.string(),
+  width: z.number(),
+  height: z.number(),
+  seed: z.number().nullable(),
+  steps: z.number(),
+  cfg: z.number(),
+  sampler_name: z.string(),
+  scheduler: z.string(),
+  denoise: z.number(),
+  guidance: z.number(),
+  output_prefix: z.string(),
+  timeout_seconds: z.number(),
+});
+
+export const localFluxWorkflowValidationResponseSchema = z.object({
+  valid: z.boolean(),
+  workflow_path: z.string(),
+  workflow_format: z.enum(["api", "ui", "unknown"]),
+  missing_bindings: z.array(z.string()),
   message: z.string(),
 });
 
@@ -282,5 +309,9 @@ export type SessionResponse = z.infer<typeof sessionResponseSchema>;
 export type RegistryItemResponse = z.infer<typeof registryItemResponseSchema>;
 export type RegistryPatchProposalResponse = z.infer<typeof registryPatchProposalResponseSchema>;
 export type ModelInfoResponse = z.infer<typeof modelInfoResponseSchema>;
-export type FluxReadinessResponse = z.infer<typeof fluxReadinessResponseSchema>;
+export type LocalFluxStatusResponse = z.infer<typeof localFluxStatusResponseSchema>;
+export type LocalFluxSettingsResponse = z.infer<typeof localFluxSettingsResponseSchema>;
+export type LocalFluxWorkflowValidationResponse = z.infer<
+  typeof localFluxWorkflowValidationResponseSchema
+>;
 export type LogResponse = z.infer<typeof logResponseSchema>;

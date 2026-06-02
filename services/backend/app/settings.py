@@ -26,7 +26,19 @@ DEFAULT_CODEX_REASONING_EFFORT_OPTIONS = ["low", "medium", "high", "xhigh"]
 DEFAULT_CODEX_REASONING_SUMMARY_OPTIONS = ["auto", "concise", "detailed", "none"]
 DEFAULT_CODEX_VERBOSITY_OPTIONS = ["low", "medium", "high"]
 DEFAULT_AGENT_PROVIDER_OPTIONS = {"codex_cli", "ollama_local_llm"}
-DEFAULT_IMAGE_PROVIDER_OPTIONS = {"codex_cli_gpt_image", "diffusers_flux2"}
+DEFAULT_IMAGE_PROVIDER_OPTIONS = {"codex_cli_gpt_image", "local_flux"}
+DEFAULT_LOCAL_FLUX_T2I_WORKFLOW_PATH = (
+    "workflow/Flux 2 Klein 9B FP8 (Distilled)/"
+    "Flux 2 Klein 9B FP8 (Distilled) - Image Generation.json"
+)
+DEFAULT_LOCAL_FLUX_I2I_ONE_WORKFLOW_PATH = (
+    "workflow/Flux 2 Klein 9B FP8 (Distilled)/"
+    "Flux 2 Klein 9B FP8 (Distilled) - One Image Edit.json"
+)
+DEFAULT_LOCAL_FLUX_I2I_TWO_WORKFLOW_PATH = (
+    "workflow/Flux 2 Klein 9B FP8 (Distilled)/"
+    "Flux 2 Klein 9B FP8 (Distilled) - Two Images Edit.json"
+)
 
 
 def parse_csv(value: str | list[str] | None) -> list[str]:
@@ -93,6 +105,26 @@ class Settings(BaseSettings):
     ollama_timeout_seconds: int = Field(default=300, ge=1, le=3600)
     ollama_agent_temperature: float = Field(default=0.2, ge=0, le=2)
 
+    local_flux_base_url: str = "http://127.0.0.1:8188"
+    local_flux_workflow_path: str = DEFAULT_LOCAL_FLUX_T2I_WORKFLOW_PATH
+    local_flux_i2i_one_workflow_path: str = DEFAULT_LOCAL_FLUX_I2I_ONE_WORKFLOW_PATH
+    local_flux_i2i_two_workflow_path: str = DEFAULT_LOCAL_FLUX_I2I_TWO_WORKFLOW_PATH
+    local_flux_model_path: str = r"flux2\flux-2-klein-9b-fp8mixed.safetensors"
+    local_flux_vae_path: str = "flux2-vae.safetensors"
+    local_flux_text_encoder_path: str = "qwen_3_8b_fp8mixed.safetensors"
+    local_flux_width: int = Field(default=1024, ge=64, le=4096)
+    local_flux_height: int = Field(default=1024, ge=64, le=4096)
+    local_flux_seed: int | None = None
+    local_flux_steps: int = Field(default=4, ge=1, le=150)
+    local_flux_cfg: float = Field(default=1.0, ge=0, le=30)
+    local_flux_sampler_name: str = "euler"
+    local_flux_scheduler: str = "simple"
+    local_flux_denoise: float = Field(default=1.0, ge=0, le=1)
+    local_flux_guidance: float = Field(default=3.5, ge=0, le=30)
+    local_flux_output_prefix: str = "aiimg"
+    local_flux_timeout_seconds: int = Field(default=600, ge=1, le=7200)
+    run_local_flux_smoke: bool = False
+
     hf_token: str | None = Field(default=None, repr=False)
     hf_home: str | None = None
     hf_hub_cache: str | None = None
@@ -154,6 +186,8 @@ class Settings(BaseSettings):
     @field_validator("selected_image_provider")
     @classmethod
     def validate_selected_image_provider(cls, value: str) -> str:
+        if value == "diffusers_flux2":
+            return "local_flux"
         if value not in DEFAULT_IMAGE_PROVIDER_OPTIONS:
             allowed = ", ".join(sorted(DEFAULT_IMAGE_PROVIDER_OPTIONS))
             raise ValueError(f"SELECTED_IMAGE_PROVIDER must be one of: {allowed}")
@@ -166,14 +200,36 @@ class Settings(BaseSettings):
         "hf_hub_cache",
         "codex_default_verbosity",
         "ollama_selected_model",
+        "local_flux_seed",
         mode="before",
     )
     @classmethod
-    def empty_secretish_values_to_none(cls, value: str | None) -> str | None:
+    def empty_secretish_values_to_none(cls, value: object) -> object:
         if value is None:
             return None
+        if not isinstance(value, str):
+            return value
         stripped = value.strip()
         return stripped or None
+
+    @field_validator(
+        "local_flux_base_url",
+        "local_flux_workflow_path",
+        "local_flux_i2i_one_workflow_path",
+        "local_flux_i2i_two_workflow_path",
+        "local_flux_model_path",
+        "local_flux_vae_path",
+        "local_flux_text_encoder_path",
+        "local_flux_sampler_name",
+        "local_flux_scheduler",
+        "local_flux_output_prefix",
+    )
+    @classmethod
+    def strip_required_local_flux_strings(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("Local Flux settings cannot be empty.")
+        return stripped
 
     @model_validator(mode="after")
     def ensure_codex_default_model_is_listed(self) -> "Settings":

@@ -1,11 +1,11 @@
 ---
 name: model-flux2-klein-9b-fp8
-description: Use when optimizing prompts or parameters for FLUX.2 Klein 9B FP8 through Diffusers or ComfyUI fallback, including T2I and I2I.
+description: Use when optimizing prompts or parameters for Local Flux / FLUX.2 Klein 9B FP8, including T2I and I2I.
 ---
 
 Model notes:
 1. Supports text-to-image and image-to-image/reference-based editing.
-2. Default distilled setup can start with low inference steps and guidance around 1.0, but expose parameters to the user.
+2. Default distilled setup can start with low inference steps and guidance around 1.0; detailed parameters live in Local Flux settings.
 3. Prioritize clear subject, composition, lighting, material, camera, and spatial relations.
 4. Avoid overloading the prompt with conflicting styles.
 5. For I2I, ask whether to preserve subject identity, composition, color palette, pose, product shape, or only transfer style.

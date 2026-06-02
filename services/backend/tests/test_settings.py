@@ -82,7 +82,7 @@ def test_safe_settings_patch_persists_across_app_restart(tmp_path) -> None:
         "/settings/safe",
         json={
             "selected_agent_provider": "ollama_local_llm",
-            "selected_image_provider": "diffusers_flux2",
+            "selected_image_provider": "local_flux",
             "ollama_timeout_seconds": 123,
             "ollama_agent_temperature": 0.4,
         },
@@ -105,9 +105,47 @@ def test_safe_settings_patch_persists_across_app_restart(tmp_path) -> None:
     assert persisted.status_code == 200
     payload = persisted.json()
     assert payload["selected_agent_provider"] == "ollama_local_llm"
-    assert payload["selected_image_provider"] == "diffusers_flux2"
+    assert payload["selected_image_provider"] == "local_flux"
     assert payload["ollama_timeout_seconds"] == 123
     assert payload["ollama_agent_temperature"] == 0.4
+
+
+def test_legacy_diffusers_image_provider_migrates_to_local_flux(tmp_path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'app.sqlite3'}"
+    seed_client = TestClient(
+        create_app(
+            Settings(
+                storage_root=str(tmp_path / "storage"),
+                database_url=database_url,
+                _env_file=None,
+            )
+        )
+    )
+    response = seed_client.patch(
+        "/settings/safe",
+        json={"selected_image_provider": "local_flux"},
+    )
+    assert response.status_code == 200
+
+    from app.core.app_settings_store import persist_app_settings
+
+    persist_app_settings(seed_client.app.state.engine, {"selected_image_provider": "diffusers_flux2"})
+
+    restarted_client = TestClient(
+        create_app(
+            Settings(
+                storage_root=str(tmp_path / "storage"),
+                database_url=database_url,
+                load_persisted_settings=True,
+                _env_file=None,
+            )
+        )
+    )
+
+    persisted = restarted_client.get("/settings/safe")
+
+    assert persisted.status_code == 200
+    assert persisted.json()["selected_image_provider"] == "local_flux"
 
 
 def test_safe_settings_patch_rejects_empty_cors_origins(tmp_path) -> None:

@@ -5,7 +5,7 @@ from app.schemas.errors import StructuredError
 from app.schemas.provider import CodexReasoningEffort, CodexReasoningSummary, CodexVerbosity
 
 WorkflowMode = Literal["t2i", "i2i"]
-ImageProvider = Literal["codex_cli_gpt_image", "diffusers_flux2"]
+ImageProvider = Literal["codex_cli_gpt_image", "local_flux"]
 GenerationJobStatus = Literal["queued", "running", "succeeded", "failed", "cancelled"]
 
 

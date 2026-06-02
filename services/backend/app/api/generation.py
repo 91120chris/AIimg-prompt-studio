@@ -8,6 +8,7 @@ from app.core.session_workspace import new_id
 from app.db.models import GeneratedImageRecord, GenerationJobRecord, ReferenceImageRecord, SessionRecord
 from app.db.session import new_session
 from app.providers.codex.codex_image_provider import CodexImageProvider, CodexImageProviderError
+from app.providers.local_flux.local_flux_provider import LocalFluxProvider, LocalFluxProviderError
 from app.schemas.errors import StructuredError
 from app.schemas.generation import (
     GenerationCancelRequest,
@@ -90,13 +91,13 @@ def _validate_references(db, session_id: str, reference_image_ids: list[str]) ->
 
 @router.post("/confirm", response_model=GenerationJobResponse)
 def confirm_generation(payload: GenerationConfirmRequest, request: Request) -> GenerationJobResponse:
-    if payload.provider != "codex_cli_gpt_image":
+    if payload.provider not in {"codex_cli_gpt_image", "local_flux"}:
         raise _structured_http_error(
             422,
             StructuredError(
                 code="image_provider_not_implemented",
-                message="目前 1C 先接 Codex GPT Image 生成流程。",
-                suggestion="Diffusers FLUX 會在 Phase 2 接上。",
+                message="目前只支援 Codex Image 與 Local Flux 生成流程。",
+                suggestion="請選擇 Codex Image 或 Local Flux 後再生成。",
             ),
         )
 
@@ -134,15 +135,23 @@ def confirm_generation(payload: GenerationConfirmRequest, request: Request) -> G
         db.commit()
         db.refresh(job)
         try:
-            CodexImageProvider(request.app.state.settings).generate(
-                db,
-                job=job,
-                payload=payload,
-                reference_images=reference_records,
-            )
+            if payload.provider == "local_flux":
+                LocalFluxProvider(request.app.state.settings).generate(
+                    db,
+                    job=job,
+                    payload=payload,
+                    reference_images=reference_records,
+                )
+            else:
+                CodexImageProvider(request.app.state.settings).generate(
+                    db,
+                    job=job,
+                    payload=payload,
+                    reference_images=reference_records,
+                )
             job.status = "succeeded"
             job.error_json = None
-        except CodexImageProviderError as error:
+        except (CodexImageProviderError, LocalFluxProviderError) as error:
             job.status = "failed"
             job.error_json = error.error.model_dump_json()
         db.add(job)

@@ -15,9 +15,10 @@ import {
   type AgentTurnResponse,
   type CodexModelsResponse,
   type CodexStatusResponse,
-  type FluxReadinessResponse,
   type GenerationJobResponse,
   type HealthResponse,
+  type LocalFluxSettingsResponse,
+  type LocalFluxStatusResponse,
   type LogResponse,
   type ModelInfoResponse,
   type OllamaModelsResponse,
@@ -32,11 +33,12 @@ import {
   agentTurnResponseSchema,
   codexModelsResponseSchema,
   codexStatusResponseSchema,
-  fluxReadinessResponseSchema,
   generationJobResponseSchema,
   healthResponseSchema,
+  localFluxSettingsResponseSchema,
+  localFluxStatusResponseSchema,
+  localFluxWorkflowValidationResponseSchema,
   logsResponseSchema,
-  modelInfoResponseSchema,
   modelInfoListResponseSchema,
   ollamaModelsResponseSchema,
   ollamaStatusResponseSchema,
@@ -50,9 +52,15 @@ import {
 
 type BackendStatus = "checking" | "connected" | "disconnected";
 type AgentProvider = "codex_cli" | "ollama_local_llm";
-type ImageProvider = "codex_cli_gpt_image" | "diffusers_flux2";
+type ImageProvider = "codex_cli_gpt_image" | "local_flux";
 type WorkflowMode = "t2i" | "i2i";
-type FluxManagerAction = "set-path" | "install" | "unload";
+type LocalFluxPathField =
+  | "workflow_path"
+  | "i2i_one_workflow_path"
+  | "i2i_two_workflow_path"
+  | "model_path"
+  | "vae_path"
+  | "text_encoder_path";
 type AnswerDraftValue = string | boolean | number | string[];
 type AnswerDrafts = Record<string, AnswerDraftValue>;
 type FeedbackQuestionnaireContext = { questionnaireId: string; jobId: string };
@@ -90,7 +98,32 @@ const fallbackOllamaModels: OllamaModelsResponse = {
   models: [],
 };
 
-const FLUX_PROVIDER_ID = "diffusers_flux2_klein_9b_fp8";
+const LOCAL_FLUX_PROVIDER_ID = "local_flux";
+
+const fallbackLocalFluxSettings: LocalFluxSettingsResponse = {
+  provider: "local_flux",
+  base_url: "http://127.0.0.1:8188",
+  workflow_path:
+    "workflow/Flux 2 Klein 9B FP8 (Distilled)/Flux 2 Klein 9B FP8 (Distilled) - Image Generation.json",
+  i2i_one_workflow_path:
+    "workflow/Flux 2 Klein 9B FP8 (Distilled)/Flux 2 Klein 9B FP8 (Distilled) - One Image Edit.json",
+  i2i_two_workflow_path:
+    "workflow/Flux 2 Klein 9B FP8 (Distilled)/Flux 2 Klein 9B FP8 (Distilled) - Two Images Edit.json",
+  model_path: "flux2\\flux-2-klein-9b-fp8mixed.safetensors",
+  vae_path: "flux2-vae.safetensors",
+  text_encoder_path: "qwen_3_8b_fp8mixed.safetensors",
+  width: 1024,
+  height: 1024,
+  seed: null,
+  steps: 4,
+  cfg: 1,
+  sampler_name: "euler",
+  scheduler: "simple",
+  denoise: 1,
+  guidance: 3.5,
+  output_prefix: "aiimg",
+  timeout_seconds: 600,
+};
 
 const backendBaseUrl = __FRONTEND_API_BASE_URL__.replace(/\/$/, "");
 
@@ -140,6 +173,10 @@ function statusText(value: boolean | undefined): string {
     return "不可用";
   }
   return "檢查中";
+}
+
+function imageProviderLabel(provider: ImageProvider): string {
+  return provider === "local_flux" ? "Local Flux" : "Codex Image";
 }
 
 function formatSessionTime(value: string): string {
@@ -238,12 +275,12 @@ function App() {
   const historyDrawerRef = useRef<HTMLElement | null>(null);
   const managerTriggerRef = useRef<HTMLButtonElement | null>(null);
   const managerCloseRef = useRef<HTMLButtonElement | null>(null);
+  const localFluxTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const localFluxCloseRef = useRef<HTMLButtonElement | null>(null);
+  const localFluxDrawerRef = useRef<HTMLElement | null>(null);
   const [workflowMode, setWorkflowMode] = useState<WorkflowMode>("t2i");
   const [agentProvider, setAgentProvider] = useState<AgentProvider>("codex_cli");
   const [imageProvider, setImageProvider] = useState<ImageProvider>("codex_cli_gpt_image");
-  const [seed, setSeed] = useState("");
-  const [steps, setSteps] = useState(28);
-  const [guidance, setGuidance] = useState(3.5);
   const [originalPrompt, setOriginalPrompt] = useState("");
   const [optimizedPrompt, setOptimizedPrompt] = useState("");
   const [includeOriginalPromptContext, setIncludeOriginalPromptContext] = useState(true);
@@ -251,6 +288,7 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [managerOpen, setManagerOpen] = useState(false);
+  const [localFluxOpen, setLocalFluxOpen] = useState(false);
   const [settingsMessage, setSettingsMessage] = useState<string | null>(null);
   const [historyMessage, setHistoryMessage] = useState<string | null>(null);
   const [historyBusy, setHistoryBusy] = useState(false);
@@ -261,10 +299,12 @@ function App() {
   const [managerSkills, setManagerSkills] = useState<RegistryItemResponse[]>([]);
   const [managerTemplates, setManagerTemplates] = useState<RegistryItemResponse[]>([]);
   const [managerLogs, setManagerLogs] = useState<LogResponse[]>([]);
-  const [fluxReadiness, setFluxReadiness] = useState<FluxReadinessResponse | null>(null);
-  const [fluxPathDraft, setFluxPathDraft] = useState("");
-  const [managerActionBusy, setManagerActionBusy] = useState<FluxManagerAction | null>(null);
-  const [managerPathPickerBusy, setManagerPathPickerBusy] = useState(false);
+  const [localFluxStatus, setLocalFluxStatus] = useState<LocalFluxStatusResponse | null>(null);
+  const [localFluxDraft, setLocalFluxDraft] =
+    useState<LocalFluxSettingsResponse>(fallbackLocalFluxSettings);
+  const [localFluxMessage, setLocalFluxMessage] = useState<string | null>(null);
+  const [localFluxBusy, setLocalFluxBusy] = useState(false);
+  const [localFluxPickerBusy, setLocalFluxPickerBusy] = useState<LocalFluxPathField | null>(null);
   const [backendStatus, setBackendStatus] = useState<BackendStatus>("checking");
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [codexStatus, setCodexStatus] = useState<CodexStatusResponse | null>(null);
@@ -289,8 +329,8 @@ function App() {
     useState<FeedbackQuestionnaireContext | null>(null);
   const isCodexAgent = agentProvider === "codex_cli";
   const activeAgentName = isCodexAgent ? "Codex" : "Ollama";
-  const fluxModel = useMemo(
-    () => managerModels.find((model) => model.provider === FLUX_PROVIDER_ID) ?? null,
+  const localFluxModel = useMemo(
+    () => managerModels.find((model) => model.provider === LOCAL_FLUX_PROVIDER_ID) ?? null,
     [managerModels],
   );
 
@@ -313,6 +353,7 @@ function App() {
     }, 0);
     setHistoryOpen(false);
     setManagerOpen(false);
+    setLocalFluxOpen(false);
 
     function handleDrawerKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
@@ -374,6 +415,7 @@ function App() {
     }, 0);
     setSettingsOpen(false);
     setManagerOpen(false);
+    setLocalFluxOpen(false);
 
     function handleDrawerKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
@@ -435,6 +477,7 @@ function App() {
     }, 0);
     setSettingsOpen(false);
     setHistoryOpen(false);
+    setLocalFluxOpen(false);
 
     function handleDrawerKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
@@ -449,6 +492,68 @@ function App() {
       previousFocus?.focus();
     };
   }, [managerOpen]);
+
+  useEffect(() => {
+    if (!localFluxOpen) {
+      return;
+    }
+
+    const previousFocus =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : localFluxTriggerRef.current;
+
+    window.setTimeout(() => {
+      localFluxCloseRef.current?.focus();
+    }, 0);
+    setSettingsOpen(false);
+    setHistoryOpen(false);
+    setManagerOpen(false);
+
+    function handleDrawerKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setLocalFluxOpen(false);
+        return;
+      }
+
+      if (event.key !== "Tab") {
+        return;
+      }
+
+      const drawer = localFluxDrawerRef.current;
+      if (!drawer) {
+        return;
+      }
+
+      const focusable = Array.from(
+        drawer.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((element) => element.offsetParent !== null);
+
+      if (focusable.length === 0) {
+        return;
+      }
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+
+    window.addEventListener("keydown", handleDrawerKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleDrawerKeyDown);
+      previousFocus?.focus();
+    };
+  }, [localFluxOpen]);
 
   async function updateCodexDefaultModel(model: string) {
     setCodexModels((current) => ({ ...current, default_model: model }));
@@ -556,18 +661,20 @@ function App() {
   async function refreshProviderSettings() {
     setSettingsMessage(null);
     try {
-      const [codexModelsPayload, ollamaModelsPayload, codexPayload, ollamaPayload] =
+      const [codexModelsPayload, ollamaModelsPayload, codexPayload, ollamaPayload, localFluxPayload] =
         await Promise.all([
           fetchJson("/providers/codex/models", codexModelsResponseSchema),
           fetchJson("/providers/ollama/models", ollamaModelsResponseSchema),
           fetchJson("/providers/codex/status", codexStatusResponseSchema),
           fetchJson("/providers/ollama/status", ollamaStatusResponseSchema),
+          fetchJson("/providers/local-flux/status", localFluxStatusResponseSchema),
         ]);
 
       setCodexModels(codexModelsPayload);
       setOllamaModels(ollamaModelsPayload);
       setCodexStatus(codexPayload);
       setOllamaStatus(ollamaPayload);
+      setLocalFluxStatus(localFluxPayload);
       setSettingsMessage("已重新整理");
     } catch (error) {
       setSettingsMessage(error instanceof Error ? error.message : "重新整理失敗");
@@ -620,6 +727,7 @@ function App() {
   async function openHistoryDrawer() {
     setSettingsOpen(false);
     setManagerOpen(false);
+    setLocalFluxOpen(false);
     setHistoryOpen(true);
     await refreshSessionHistory();
   }
@@ -628,15 +736,13 @@ function App() {
     setManagerBusy(true);
     setManagerMessage(null);
     try {
-      const [models, readiness, skills, templates, logs] = await Promise.all([
+      const [models, skills, templates, logs] = await Promise.all([
         fetchJson("/models", modelInfoListResponseSchema),
-        fetchJson("/models/flux/readiness", fluxReadinessResponseSchema),
         fetchJson("/skills", registryItemsResponseSchema),
         fetchJson("/templates", registryItemsResponseSchema),
         fetchJson("/logs", logsResponseSchema),
       ]);
       setManagerModels(models);
-      setFluxReadiness(readiness);
       setManagerSkills(skills);
       setManagerTemplates(templates);
       setManagerLogs(logs);
@@ -650,109 +756,164 @@ function App() {
     }
   }
 
-  function replaceManagerModel(nextModel: ModelInfoResponse) {
-    setManagerModels((current) => {
-      const hasModel = current.some((model) => model.provider === nextModel.provider);
-      if (!hasModel) {
-        return [nextModel, ...current];
-      }
-      return current.map((model) => (model.provider === nextModel.provider ? nextModel : model));
-    });
+  async function openManagerDrawer() {
+    setSettingsOpen(false);
+    setHistoryOpen(false);
+    setLocalFluxOpen(false);
+    setManagerOpen(true);
+    await refreshManagerData();
   }
 
-  async function chooseFluxModelPath() {
-    if (!isTauriRuntime()) {
-      setManagerMessage("資料夾選擇器只在 Tauri 桌面版可用；目前瀏覽器預覽請手動貼上路徑。");
-      return;
-    }
+  function updateLocalFluxDraft<K extends keyof LocalFluxSettingsResponse>(
+    key: K,
+    value: LocalFluxSettingsResponse[K],
+  ) {
+    setLocalFluxDraft((current) => ({ ...current, [key]: value }));
+  }
 
-    setManagerPathPickerBusy(true);
-    setManagerMessage(null);
+  async function refreshLocalFluxSettings() {
+    setLocalFluxBusy(true);
+    setLocalFluxMessage(null);
     try {
-      const { open } = await import("@tauri-apps/plugin-dialog");
-      const selected = await open({
-        directory: true,
-        multiple: false,
-        title: "選擇 FLUX 模型資料夾",
-        defaultPath: fluxPathDraft.trim() || undefined,
-      });
-
-      if (typeof selected === "string") {
-        setFluxPathDraft(selected);
-        setManagerMessage("已選擇 FLUX 模型路徑，請按儲存路徑。");
-        return;
-      }
-      if (Array.isArray(selected) && typeof selected[0] === "string") {
-        setFluxPathDraft(selected[0]);
-        setManagerMessage("已選擇 FLUX 模型路徑，請按儲存路徑。");
-        return;
-      }
-      setManagerMessage("已取消選擇路徑。");
-    } catch {
-      setManagerMessage("無法開啟資料夾選擇器；目前可手動輸入或貼上路徑。");
+      const [settingsPayload, statusPayload] = await Promise.all([
+        fetchJson("/providers/local-flux/settings", localFluxSettingsResponseSchema),
+        fetchJson("/providers/local-flux/status", localFluxStatusResponseSchema),
+      ]);
+      setLocalFluxDraft(settingsPayload);
+      setLocalFluxStatus(statusPayload);
+      setLocalFluxMessage(statusPayload.message);
+    } catch (error) {
+      setLocalFluxMessage(error instanceof Error ? error.message : "無法載入 Local Flux 設定");
     } finally {
-      setManagerPathPickerBusy(false);
+      setLocalFluxBusy(false);
     }
   }
 
-  async function runFluxManagerAction(action: FluxManagerAction) {
-    const modelPath = fluxPathDraft.trim();
-    if (action === "set-path" && !modelPath) {
-      setManagerMessage("請先輸入 FLUX 本機模型路徑。");
-      return;
-    }
+  async function openLocalFluxDrawer() {
+    setSettingsOpen(false);
+    setHistoryOpen(false);
+    setManagerOpen(false);
+    setLocalFluxOpen(true);
+    await refreshLocalFluxSettings();
+  }
 
-    const actionPath =
-      action === "set-path"
-        ? "/models/flux/set-path"
-        : action === "install"
-          ? "/models/flux/install"
-          : "/models/flux/unload";
-    const actionMessages: Record<FluxManagerAction, string> = {
-      "set-path": "FLUX 路徑已儲存。",
-      install: "FLUX 已標記為待安裝。",
-      unload: "FLUX 已卸載。",
-    };
-
-    setManagerActionBusy(action);
-    setManagerMessage(null);
+  async function saveLocalFluxSettings() {
+    setLocalFluxBusy(true);
+    setLocalFluxMessage(null);
     try {
-      const response = await fetch(`${backendBaseUrl}${actionPath}`, {
-        method: "POST",
+      const response = await fetch(`${backendBaseUrl}/providers/local-flux/settings`, {
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: action === "set-path" ? JSON.stringify({ model_path: modelPath }) : undefined,
+        body: JSON.stringify({
+          base_url: localFluxDraft.base_url,
+          workflow_path: localFluxDraft.workflow_path,
+          i2i_one_workflow_path: localFluxDraft.i2i_one_workflow_path,
+          i2i_two_workflow_path: localFluxDraft.i2i_two_workflow_path,
+          model_path: localFluxDraft.model_path,
+          vae_path: localFluxDraft.vae_path,
+          text_encoder_path: localFluxDraft.text_encoder_path,
+          width: localFluxDraft.width,
+          height: localFluxDraft.height,
+          seed: localFluxDraft.seed,
+          steps: localFluxDraft.steps,
+          cfg: localFluxDraft.cfg,
+          sampler_name: localFluxDraft.sampler_name,
+          scheduler: localFluxDraft.scheduler,
+          denoise: localFluxDraft.denoise,
+          guidance: localFluxDraft.guidance,
+          output_prefix: localFluxDraft.output_prefix,
+          timeout_seconds: localFluxDraft.timeout_seconds,
+        }),
       });
       if (!response.ok) {
         throw new Error(await readErrorMessage(response));
       }
-      const model = modelInfoResponseSchema.parse(await response.json());
-      replaceManagerModel(model);
-      if (action === "set-path") {
-        setFluxPathDraft("");
-      }
-      try {
-        const [logs, readiness] = await Promise.all([
-          fetchJson("/logs", logsResponseSchema),
-          fetchJson("/models/flux/readiness", fluxReadinessResponseSchema),
-        ]);
-        setManagerLogs(logs);
-        setFluxReadiness(readiness);
-      } catch {
-        // The model action succeeded; log refresh can recover on the next manual refresh.
-      }
-      setManagerMessage(actionMessages[action]);
+      const payload = localFluxSettingsResponseSchema.parse(await response.json());
+      setLocalFluxDraft(payload);
+      setLocalFluxMessage("Local Flux 設定已儲存。");
     } catch (error) {
-      setManagerMessage(error instanceof Error ? error.message : "FLUX 模型操作失敗");
+      setLocalFluxMessage(error instanceof Error ? error.message : "Local Flux 設定儲存失敗");
     } finally {
-      setManagerActionBusy(null);
+      setLocalFluxBusy(false);
     }
   }
 
-  async function openManagerDrawer() {
-    setSettingsOpen(false);
-    setHistoryOpen(false);
-    setManagerOpen(true);
-    await refreshManagerData();
+  async function testLocalFluxConnection() {
+    setLocalFluxBusy(true);
+    setLocalFluxMessage(null);
+    try {
+      await saveLocalFluxSettings();
+      const status = await fetchJson("/providers/local-flux/status", localFluxStatusResponseSchema);
+      setLocalFluxStatus(status);
+      setLocalFluxMessage(status.message);
+    } catch (error) {
+      setLocalFluxMessage(error instanceof Error ? error.message : "Local Flux 連線測試失敗");
+    } finally {
+      setLocalFluxBusy(false);
+    }
+  }
+
+  async function validateLocalFluxWorkflow(mode: WorkflowMode) {
+    setLocalFluxBusy(true);
+    setLocalFluxMessage(null);
+    const workflowPath =
+      mode === "t2i"
+        ? localFluxDraft.workflow_path
+        : localFluxDraft.i2i_two_workflow_path || localFluxDraft.i2i_one_workflow_path;
+    try {
+      const response = await fetch(`${backendBaseUrl}/providers/local-flux/workflows/validate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          workflow_path: workflowPath,
+          mode,
+          reference_count: mode === "i2i" ? 1 : 0,
+        }),
+      });
+      if (!response.ok) {
+        throw new Error(await readErrorMessage(response));
+      }
+      const payload = localFluxWorkflowValidationResponseSchema.parse(await response.json());
+      setLocalFluxMessage(
+        payload.valid
+          ? `${payload.message} (${payload.workflow_format})`
+          : `${payload.message} ${payload.missing_bindings.join(", ")}`,
+      );
+    } catch (error) {
+      setLocalFluxMessage(error instanceof Error ? error.message : "Workflow 驗證失敗");
+    } finally {
+      setLocalFluxBusy(false);
+    }
+  }
+
+  async function chooseLocalFluxPath(field: LocalFluxPathField) {
+    if (!isTauriRuntime()) {
+      setLocalFluxMessage("檔案選擇器只在 Tauri 桌面版可用；目前瀏覽器預覽請手動貼上路徑。");
+      return;
+    }
+
+    setLocalFluxPickerBusy(field);
+    setLocalFluxMessage(null);
+    try {
+      const { open } = await import("@tauri-apps/plugin-dialog");
+      const selected = await open({
+        directory: false,
+        multiple: false,
+        title: "選擇 Local Flux 檔案",
+        defaultPath: localFluxDraft[field] || undefined,
+      });
+      const value = typeof selected === "string" ? selected : Array.isArray(selected) ? selected[0] : null;
+      if (typeof value === "string") {
+        updateLocalFluxDraft(field, value);
+        setLocalFluxMessage("已選擇路徑，請按儲存設定。");
+      } else {
+        setLocalFluxMessage("已取消選擇路徑。");
+      }
+    } catch {
+      setLocalFluxMessage("無法開啟檔案選擇器；目前可手動輸入或貼上路徑。");
+    } finally {
+      setLocalFluxPickerBusy(null);
+    }
   }
 
   async function loadSession(sessionId: string) {
@@ -976,7 +1137,7 @@ function App() {
     setErrorMessage(null);
     try {
       const session = await ensureSession();
-      const seedValue = seed.trim() ? Number(seed.trim()) : null;
+      const seedValue = localFluxDraft.seed;
       const response = await fetch(`${backendBaseUrl}/generation/confirm`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -987,8 +1148,8 @@ function App() {
           original_prompt: originalPrompt,
           optimized_prompt: optimizedPrompt,
           parameters: {
-            steps,
-            guidance,
+            steps: localFluxDraft.steps,
+            guidance: localFluxDraft.guidance,
             seed: seedValue === null ? null : Number.isFinite(seedValue) ? seedValue : null,
           },
           reference_image_ids: referenceImages.map((image) => image.reference_image_id),
@@ -1059,6 +1220,8 @@ function App() {
           codexModelsPayload,
           ollamaPayload,
           ollamaModelsPayload,
+          localFluxPayload,
+          localFluxSettingsPayload,
           secretsPayload,
         ] = await Promise.allSettled([
           fetchJson("/settings/safe", safeSettingsResponseSchema, controller.signal),
@@ -1066,6 +1229,12 @@ function App() {
           fetchJson("/providers/codex/models", codexModelsResponseSchema, controller.signal),
           fetchJson("/providers/ollama/status", ollamaStatusResponseSchema, controller.signal),
           fetchJson("/providers/ollama/models", ollamaModelsResponseSchema, controller.signal),
+          fetchJson("/providers/local-flux/status", localFluxStatusResponseSchema, controller.signal),
+          fetchJson(
+            "/providers/local-flux/settings",
+            localFluxSettingsResponseSchema,
+            controller.signal,
+          ),
           fetchJson("/security/secrets/status", secretStatusResponseSchema, controller.signal),
         ]);
 
@@ -1085,6 +1254,12 @@ function App() {
         if (ollamaModelsPayload.status === "fulfilled") {
           setOllamaModels(ollamaModelsPayload.value);
         }
+        if (localFluxPayload.status === "fulfilled") {
+          setLocalFluxStatus(localFluxPayload.value);
+        }
+        if (localFluxSettingsPayload.status === "fulfilled") {
+          setLocalFluxDraft(localFluxSettingsPayload.value);
+        }
         if (secretsPayload.status === "fulfilled") {
           setSecretStatus(secretsPayload.value);
         }
@@ -1096,6 +1271,7 @@ function App() {
         setCodexStatus(null);
         setOllamaStatus(null);
         setOllamaModels(fallbackOllamaModels);
+        setLocalFluxStatus(null);
         setSecretStatus(null);
         setBackendStatus("disconnected");
         setErrorMessage(error instanceof Error ? error.message : "無法連線到後端");
@@ -1271,6 +1447,36 @@ function App() {
     );
   }
 
+  function renderLocalFluxPathField(
+    field: LocalFluxPathField,
+    label: string,
+    placeholder: string,
+  ) {
+    return (
+      <label>
+        {label}
+        <div className="manager-path-row">
+          <input
+            value={localFluxDraft[field]}
+            placeholder={placeholder}
+            onChange={(event) => updateLocalFluxDraft(field, event.target.value)}
+          />
+          <button
+            className="command-button"
+            type="button"
+            disabled={localFluxBusy || localFluxPickerBusy !== null}
+            onClick={() => {
+              void chooseLocalFluxPath(field);
+            }}
+          >
+            <FolderOpen size={16} aria-hidden="true" />
+            {localFluxPickerBusy === field ? "開啟中" : "選擇"}
+          </button>
+        </div>
+      </label>
+    );
+  }
+
   return (
     <main className="app-shell">
       <a className="skip-link" href="#workspace-main">
@@ -1375,20 +1581,9 @@ function App() {
                 void updateSafeSettings({ selected_image_provider: nextProvider });
               }}
             >
-              <option value="codex_cli_gpt_image">Codex GPT Image</option>
-              <option value="diffusers_flux2" disabled>
-                FLUX Phase 2
-              </option>
+              <option value="codex_cli_gpt_image">Codex Image</option>
+              <option value="local_flux">Local Flux</option>
             </select>
-          </label>
-          <label className="seed-field">
-            Seed
-            <input
-              inputMode="numeric"
-              placeholder="隨機"
-              value={seed}
-              onChange={(event) => setSeed(event.target.value)}
-            />
           </label>
         </div>
 
@@ -1430,6 +1625,20 @@ function App() {
             <Database size={17} aria-hidden="true" />
           </button>
           <button
+            ref={localFluxTriggerRef}
+            className="icon-button"
+            type="button"
+            title="Local Flux 設定"
+            aria-label="開啟 Local Flux 設定"
+            aria-haspopup="dialog"
+            aria-expanded={localFluxOpen}
+            onClick={() => {
+              void openLocalFluxDrawer();
+            }}
+          >
+            <SlidersHorizontal size={17} aria-hidden="true" />
+          </button>
+          <button
             ref={settingsTriggerRef}
             className="icon-button"
             type="button"
@@ -1440,6 +1649,7 @@ function App() {
             onClick={() => {
               setHistoryOpen(false);
               setManagerOpen(false);
+              setLocalFluxOpen(false);
               setSettingsOpen(true);
             }}
           >
@@ -1490,6 +1700,11 @@ function App() {
                       }`
                     : (ollamaStatus?.error ?? "等待檢查")}
                 </p>
+              </div>
+              <div className="provider-card">
+                <span>Local Flux</span>
+                <strong>{statusText(localFluxStatus?.available)}</strong>
+                <p>{localFluxStatus?.message ?? "等待檢查"}</p>
               </div>
               <div className="provider-card">
                 <span>HF_TOKEN</span>
@@ -1639,27 +1854,6 @@ function App() {
                 <option value="character">角色設計</option>
               </select>
             </label>
-            <label>
-              Steps
-              <input
-                min={1}
-                max={80}
-                type="number"
-                value={steps}
-                onChange={(event) => setSteps(Number(event.target.value))}
-              />
-            </label>
-            <label>
-              Guidance
-              <input
-                min={0}
-                max={20}
-                step={0.5}
-                type="number"
-                value={guidance}
-                onChange={(event) => setGuidance(Number(event.target.value))}
-              />
-            </label>
           </div>
           <label className="editor-block">
             原始 Prompt
@@ -1681,7 +1875,8 @@ function App() {
             <div>
               <h3>生成控制</h3>
               <p>
-                {workflowMode.toUpperCase()} / {imageProvider} / Seed {seed || "隨機"}
+                {workflowMode.toUpperCase()} / {imageProviderLabel(imageProvider)} / Seed{" "}
+                {localFluxDraft.seed ?? "隨機"}
               </p>
               {generationMessage ? <p className="generation-note">{generationMessage}</p> : null}
               <div className="context-toggles" aria-label="Agent context">
@@ -1724,8 +1919,7 @@ function App() {
                 disabled={
                   generationBusy ||
                   backendStatus !== "connected" ||
-                  !optimizedPrompt.trim() ||
-                  imageProvider !== "codex_cli_gpt_image"
+                  !optimizedPrompt.trim()
                 }
                 onClick={() => {
                   void confirmGeneration();
@@ -1931,90 +2125,6 @@ function App() {
               <section className="settings-section">
                 <h3>Models</h3>
                 <p>{managerBusy ? "正在載入模型狀態..." : `${managerModels.length} 個模型狀態`}</p>
-                <div className="manager-model-controls" aria-label="FLUX 模型管理">
-                  <div className="manager-state-line">
-                    <span>FLUX.2 Klein 9B FP8</span>
-                    <strong>
-                      {fluxModel
-                        ? `${fluxModel.status}${fluxModel.path_label ? ` / ${fluxModel.path_label}` : ""}`
-                        : "尚未載入"}
-                    </strong>
-                  </div>
-                  <div className="manager-state-line">
-                    <span>Hugging Face Token</span>
-                    <strong>{fluxReadiness?.hf_token_configured ? "已設定" : "未設定"}</strong>
-                  </div>
-                  <div className="manager-state-line">
-                    <span>HF Cache</span>
-                    <strong>{fluxReadiness?.hf_cache_configured ? "已設定" : "使用預設"}</strong>
-                  </div>
-                  <label>
-                    本機模型路徑
-                    <div className="manager-path-row">
-                      <input
-                        value={fluxPathDraft}
-                        placeholder="例如 C:\\models\\flux2-klein-fp8"
-                        onChange={(event) => setFluxPathDraft(event.target.value)}
-                      />
-                      <button
-                        className="command-button"
-                        type="button"
-                        disabled={managerBusy || managerActionBusy !== null || managerPathPickerBusy}
-                        onClick={() => {
-                          void chooseFluxModelPath();
-                        }}
-                      >
-                        <FolderOpen size={16} aria-hidden="true" />
-                        {managerPathPickerBusy ? "開啟中" : "選擇"}
-                      </button>
-                    </div>
-                  </label>
-                  <div className="manager-actions" aria-label="FLUX 模型操作">
-                    <button
-                      className="command-button command-button-primary"
-                      type="button"
-                      disabled={managerBusy || managerActionBusy !== null}
-                      onClick={() => {
-                        void runFluxManagerAction("set-path");
-                      }}
-                    >
-                      <Save size={16} aria-hidden="true" />
-                      儲存路徑
-                    </button>
-                    <button
-                      className="command-button"
-                      type="button"
-                      disabled={
-                        managerBusy ||
-                        managerActionBusy !== null ||
-                        fluxReadiness?.can_queue_install !== true
-                      }
-                      onClick={() => {
-                        void runFluxManagerAction("install");
-                      }}
-                    >
-                      <RefreshCcw size={16} aria-hidden="true" />
-                      排入安裝
-                    </button>
-                    <button
-                      className="command-button"
-                      type="button"
-                      disabled={managerBusy || managerActionBusy !== null}
-                      onClick={() => {
-                        void runFluxManagerAction("unload");
-                      }}
-                    >
-                      <X size={16} aria-hidden="true" />
-                      卸載
-                    </button>
-                  </div>
-                  <p aria-live="polite">
-                    {managerActionBusy
-                      ? "正在更新 FLUX 模型狀態..."
-                      : (fluxReadiness?.message ??
-                        "完整 token 與本機路徑只保存在後端，介面只顯示安全狀態。")}
-                  </p>
-                </div>
                 <div className="history-list" aria-label="模型狀態清單">
                   {managerModels.length === 0 ? (
                     <p>尚無模型狀態。</p>
@@ -2088,6 +2198,289 @@ function App() {
             <footer className="drawer-footer">
               <Database size={16} aria-hidden="true" />
               <span>{managerMessage ?? "Models / Skills / Templates / Logs API 已接上。"}</span>
+            </footer>
+          </aside>
+        </div>
+      ) : null}
+
+      {localFluxOpen ? (
+        <div className="drawer-layer" role="presentation">
+          <button
+            className="drawer-scrim"
+            type="button"
+            aria-label="關閉 Local Flux 設定"
+            onClick={() => setLocalFluxOpen(false)}
+          />
+          <aside
+            ref={localFluxDrawerRef}
+            className="settings-drawer local-flux-drawer"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="local-flux-title"
+          >
+            <header className="drawer-header">
+              <div>
+                <span>Local Flux</span>
+                <h2 id="local-flux-title">Local Flux 設定</h2>
+              </div>
+              <button
+                ref={localFluxCloseRef}
+                className="icon-button"
+                type="button"
+                title="關閉"
+                aria-label="關閉 Local Flux 設定"
+                onClick={() => setLocalFluxOpen(false)}
+              >
+                <X size={18} aria-hidden="true" />
+              </button>
+            </header>
+
+            <div className="drawer-content">
+              <section className="settings-section">
+                <h3>Server</h3>
+                <label>
+                  Server URL
+                  <input
+                    value={localFluxDraft.base_url}
+                    placeholder="http://127.0.0.1:8188"
+                    onChange={(event) => updateLocalFluxDraft("base_url", event.target.value)}
+                  />
+                </label>
+                <div className="settings-status-row">
+                  <span>連線</span>
+                  <strong>{statusText(localFluxStatus?.available)}</strong>
+                </div>
+                <p>{localFluxStatus?.message ?? "尚未測試 Local Flux 連線。"}</p>
+              </section>
+
+              <section className="settings-section">
+                <h3>Workflow</h3>
+                {renderLocalFluxPathField(
+                  "workflow_path",
+                  "T2I workflow",
+                  "選擇 Flux T2I workflow JSON",
+                )}
+                {renderLocalFluxPathField(
+                  "i2i_one_workflow_path",
+                  "I2I 單張 workflow",
+                  "選擇 Flux one-image edit workflow JSON",
+                )}
+                {renderLocalFluxPathField(
+                  "i2i_two_workflow_path",
+                  "I2I 雙張 workflow",
+                  "選擇 Flux two-image edit workflow JSON",
+                )}
+              </section>
+
+              <section className="settings-section">
+                <h3>Models</h3>
+                {renderLocalFluxPathField(
+                  "model_path",
+                  "Model",
+                  "flux2\\flux-2-klein-9b-fp8mixed.safetensors",
+                )}
+                {renderLocalFluxPathField("vae_path", "VAE", "flux2-vae.safetensors")}
+                {renderLocalFluxPathField(
+                  "text_encoder_path",
+                  "Text encoder",
+                  "qwen_3_8b_fp8mixed.safetensors",
+                )}
+              </section>
+
+              <section className="settings-section">
+                <h3>Sampling</h3>
+                <div className="settings-grid settings-grid-2">
+                  <label>
+                    Steps
+                    <input
+                      type="number"
+                      min={1}
+                      max={150}
+                      value={localFluxDraft.steps}
+                      onChange={(event) =>
+                        updateLocalFluxDraft("steps", Number(event.target.value))
+                      }
+                    />
+                  </label>
+                  <label>
+                    CFG
+                    <input
+                      type="number"
+                      min={0}
+                      max={30}
+                      step={0.1}
+                      value={localFluxDraft.cfg}
+                      onChange={(event) => updateLocalFluxDraft("cfg", Number(event.target.value))}
+                    />
+                  </label>
+                  <label>
+                    Sampler
+                    <input
+                      value={localFluxDraft.sampler_name}
+                      onChange={(event) =>
+                        updateLocalFluxDraft("sampler_name", event.target.value)
+                      }
+                    />
+                  </label>
+                  <label>
+                    Scheduler
+                    <input
+                      value={localFluxDraft.scheduler}
+                      onChange={(event) => updateLocalFluxDraft("scheduler", event.target.value)}
+                    />
+                  </label>
+                  <label>
+                    Denoise
+                    <input
+                      type="number"
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      value={localFluxDraft.denoise}
+                      onChange={(event) =>
+                        updateLocalFluxDraft("denoise", Number(event.target.value))
+                      }
+                    />
+                  </label>
+                  <label>
+                    Flux guidance
+                    <input
+                      type="number"
+                      min={0}
+                      max={30}
+                      step={0.1}
+                      value={localFluxDraft.guidance}
+                      onChange={(event) =>
+                        updateLocalFluxDraft("guidance", Number(event.target.value))
+                      }
+                    />
+                  </label>
+                </div>
+              </section>
+
+              <section className="settings-section">
+                <h3>Image</h3>
+                <div className="settings-grid settings-grid-2">
+                  <label>
+                    Width
+                    <input
+                      type="number"
+                      min={64}
+                      max={4096}
+                      value={localFluxDraft.width}
+                      onChange={(event) =>
+                        updateLocalFluxDraft("width", Number(event.target.value))
+                      }
+                    />
+                  </label>
+                  <label>
+                    Height
+                    <input
+                      type="number"
+                      min={64}
+                      max={4096}
+                      value={localFluxDraft.height}
+                      onChange={(event) =>
+                        updateLocalFluxDraft("height", Number(event.target.value))
+                      }
+                    />
+                  </label>
+                  <label>
+                    Seed
+                    <input
+                      inputMode="numeric"
+                      placeholder="空白代表隨機"
+                      value={localFluxDraft.seed ?? ""}
+                      onChange={(event) =>
+                        updateLocalFluxDraft(
+                          "seed",
+                          event.target.value ? Number(event.target.value) : null,
+                        )
+                      }
+                    />
+                  </label>
+                  <label>
+                    Output prefix
+                    <input
+                      value={localFluxDraft.output_prefix}
+                      onChange={(event) =>
+                        updateLocalFluxDraft("output_prefix", event.target.value)
+                      }
+                    />
+                  </label>
+                  <label>
+                    Timeout seconds
+                    <input
+                      type="number"
+                      min={1}
+                      max={7200}
+                      value={localFluxDraft.timeout_seconds}
+                      onChange={(event) =>
+                        updateLocalFluxDraft("timeout_seconds", Number(event.target.value))
+                      }
+                    />
+                  </label>
+                </div>
+              </section>
+
+              <section className="settings-section">
+                <h3>Actions</h3>
+                <div className="manager-actions" aria-label="Local Flux 操作">
+                  <button
+                    className="command-button command-button-primary"
+                    type="button"
+                    disabled={localFluxBusy}
+                    onClick={() => {
+                      void saveLocalFluxSettings();
+                    }}
+                  >
+                    <Save size={16} aria-hidden="true" />
+                    儲存設定
+                  </button>
+                  <button
+                    className="command-button"
+                    type="button"
+                    disabled={localFluxBusy}
+                    onClick={() => {
+                      void testLocalFluxConnection();
+                    }}
+                  >
+                    <RefreshCcw size={16} aria-hidden="true" />
+                    測試連線
+                  </button>
+                  <button
+                    className="command-button"
+                    type="button"
+                    disabled={localFluxBusy}
+                    onClick={() => {
+                      void validateLocalFluxWorkflow("t2i");
+                    }}
+                  >
+                    驗證 T2I
+                  </button>
+                  <button
+                    className="command-button"
+                    type="button"
+                    disabled={localFluxBusy}
+                    onClick={() => {
+                      void validateLocalFluxWorkflow("i2i");
+                    }}
+                  >
+                    驗證 I2I
+                  </button>
+                </div>
+              </section>
+            </div>
+
+            <footer className="drawer-footer">
+              <SlidersHorizontal size={16} aria-hidden="true" />
+              <span aria-live="polite" aria-atomic="true">
+                {localFluxBusy
+                  ? "Local Flux 設定更新中..."
+                  : (localFluxMessage ??
+                    localFluxModel?.message ??
+                    "Local Flux 會把設定好的 workflow 與參數送到本機 backend。")}
+              </span>
             </footer>
           </aside>
         </div>

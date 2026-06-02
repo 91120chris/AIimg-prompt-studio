@@ -23,9 +23,6 @@ from app.schemas.generation import (
 )
 from app.schemas.logs import LogResponse
 from app.schemas.model_management import (
-    FluxPathRequest,
-    FluxReadinessResponse,
-    FluxStatusResponse,
     ModelInfoResponse,
 )
 from app.schemas.provider import (
@@ -34,6 +31,11 @@ from app.schemas.provider import (
     CodexReasoningSummary,
     CodexStatusResponse,
     CodexVerbosity,
+    LocalFluxSettingsPatch,
+    LocalFluxSettingsResponse,
+    LocalFluxStatusResponse,
+    LocalFluxWorkflowValidationRequest,
+    LocalFluxWorkflowValidationResponse,
     OllamaModelsResponse,
     OllamaStatusResponse,
 )
@@ -81,9 +83,6 @@ __all__ = [
     "ErrorTurnResponse",
     "GeneratedImageResponse",
     "LogResponse",
-    "FluxPathRequest",
-    "FluxReadinessResponse",
-    "FluxStatusResponse",
     "GenerationImage",
     "GenerationCancelRequest",
     "GenerationConfirmRequest",
@@ -91,6 +90,11 @@ __all__ = [
     "GenerationParameters",
     "GenerationResult",
     "HealthResponse",
+    "LocalFluxSettingsPatch",
+    "LocalFluxSettingsResponse",
+    "LocalFluxStatusResponse",
+    "LocalFluxWorkflowValidationRequest",
+    "LocalFluxWorkflowValidationResponse",
     "MessageTurnResponse",
     "ModelInfoResponse",
     "MultiChoiceQuestionnaireAnswer",

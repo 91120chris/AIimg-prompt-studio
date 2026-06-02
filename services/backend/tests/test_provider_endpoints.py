@@ -245,3 +245,37 @@ def test_ollama_default_model_patch_persists_across_app_restart(monkeypatch, tmp
 
     assert persisted.status_code == 200
     assert persisted.json()["selected_model"] == "qwen2.5"
+
+
+def test_local_flux_settings_endpoint_does_not_return_hf_token(tmp_path) -> None:
+    secret = "hf_secret_should_not_appear"
+    client = TestClient(create_app(Settings(hf_token=secret, _env_file=None)))
+
+    response = client.get("/providers/local-flux/settings")
+
+    assert response.status_code == 200
+    assert response.json()["provider"] == "local_flux"
+    assert secret not in response.text
+    assert "hf_token" not in response.text
+
+
+def test_local_flux_workflow_validation_accepts_bundled_ui_workflow(tmp_path) -> None:
+    client = TestClient(
+        create_app(
+            Settings(
+                storage_root=str(tmp_path / "storage"),
+                database_url=f"sqlite:///{tmp_path / 'app.sqlite3'}",
+                _env_file=None,
+            )
+        )
+    )
+
+    response = client.post(
+        "/providers/local-flux/workflows/validate",
+        json={"mode": "t2i", "reference_count": 0},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["valid"] is True
+    assert payload["workflow_format"] == "ui"

@@ -31,6 +31,24 @@ PERSISTED_SETTING_KEYS = {
     "ollama_selected_model",
     "ollama_timeout_seconds",
     "ollama_agent_temperature",
+    "local_flux_base_url",
+    "local_flux_workflow_path",
+    "local_flux_i2i_one_workflow_path",
+    "local_flux_i2i_two_workflow_path",
+    "local_flux_model_path",
+    "local_flux_vae_path",
+    "local_flux_text_encoder_path",
+    "local_flux_width",
+    "local_flux_height",
+    "local_flux_seed",
+    "local_flux_steps",
+    "local_flux_cfg",
+    "local_flux_sampler_name",
+    "local_flux_scheduler",
+    "local_flux_denoise",
+    "local_flux_guidance",
+    "local_flux_output_prefix",
+    "local_flux_timeout_seconds",
     "frontend_api_base_url",
 }
 DEPRECATED_PERSISTED_SETTING_KEYS = {"codex_model_options"}
@@ -91,10 +109,10 @@ def apply_persisted_app_settings(settings: Settings, values: Mapping[str, object
         DEFAULT_AGENT_PROVIDER_OPTIONS
     ):
         settings.selected_agent_provider = str(values["selected_agent_provider"])
-    if "selected_image_provider" in values and values["selected_image_provider"] in (
-        DEFAULT_IMAGE_PROVIDER_OPTIONS
-    ):
-        settings.selected_image_provider = str(values["selected_image_provider"])
+    if "selected_image_provider" in values:
+        image_provider = _normalize_selected_image_provider(values["selected_image_provider"])
+        if image_provider is not None:
+            settings.selected_image_provider = image_provider
 
     if "cors_allow_origins" in values:
         origins = parse_csv(_string_or_list(values["cors_allow_origins"]))
@@ -149,6 +167,8 @@ def apply_persisted_app_settings(settings: Settings, values: Mapping[str, object
         if frontend_api_base_url:
             settings.frontend_api_base_url = frontend_api_base_url
 
+    _apply_local_flux_settings(settings, values)
+
 
 def _string_or_list(value: object) -> str | list[str] | None:
     if value is None or isinstance(value, str):
@@ -156,6 +176,58 @@ def _string_or_list(value: object) -> str | list[str] | None:
     if isinstance(value, list):
         return [str(item) for item in value]
     return None
+
+
+def _normalize_selected_image_provider(value: object) -> str | None:
+    if value == "diffusers_flux2":
+        return "local_flux"
+    if value in DEFAULT_IMAGE_PROVIDER_OPTIONS:
+        return str(value)
+    return None
+
+
+def _apply_local_flux_settings(settings: Settings, values: Mapping[str, object]) -> None:
+    string_fields = {
+        "local_flux_base_url",
+        "local_flux_workflow_path",
+        "local_flux_i2i_one_workflow_path",
+        "local_flux_i2i_two_workflow_path",
+        "local_flux_model_path",
+        "local_flux_vae_path",
+        "local_flux_text_encoder_path",
+        "local_flux_sampler_name",
+        "local_flux_scheduler",
+        "local_flux_output_prefix",
+    }
+    for key in string_fields:
+        value = values.get(key)
+        if isinstance(value, str) and value.strip():
+            setattr(settings, key, value.strip())
+
+    int_ranges = {
+        "local_flux_width": (64, 4096),
+        "local_flux_height": (64, 4096),
+        "local_flux_steps": (1, 150),
+        "local_flux_timeout_seconds": (1, 7200),
+    }
+    for key, (minimum, maximum) in int_ranges.items():
+        value = _int_in_range(values.get(key), minimum=minimum, maximum=maximum)
+        if value is not None:
+            setattr(settings, key, value)
+
+    if "local_flux_seed" in values:
+        seed = values.get("local_flux_seed")
+        settings.local_flux_seed = seed if isinstance(seed, int) else None
+
+    float_ranges = {
+        "local_flux_cfg": (0, 30),
+        "local_flux_denoise": (0, 1),
+        "local_flux_guidance": (0, 30),
+    }
+    for key, (minimum, maximum) in float_ranges.items():
+        value = _float_in_range(values.get(key), minimum=minimum, maximum=maximum)
+        if value is not None:
+            setattr(settings, key, value)
 
 
 def _int_in_range(value: object, *, minimum: int, maximum: int) -> int | None:

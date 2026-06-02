@@ -31,6 +31,12 @@ def generation_payload(session_id: str, optimized_prompt: str = "cinematic city"
     }
 
 
+def local_flux_generation_payload(session_id: str, optimized_prompt: str = "cinematic city") -> dict:
+    payload = generation_payload(session_id, optimized_prompt)
+    payload["provider"] = "local_flux"
+    return payload
+
+
 def fake_success_provider(tmp_path):
     class FakeCodexImageProvider:
         def __init__(self, settings):
@@ -51,6 +57,28 @@ def fake_success_provider(tmp_path):
             ]
 
     return FakeCodexImageProvider
+
+
+def fake_local_flux_provider(tmp_path):
+    class FakeLocalFluxProvider:
+        def __init__(self, settings):
+            self.settings = settings
+
+        def generate(self, db, *, job, payload, reference_images):
+            source_path = tmp_path / "fake-local-flux-output.png"
+            Image.new("RGB", (40, 28), color="teal").save(source_path)
+            return [
+                register_generated_image(
+                    db,
+                    self.settings,
+                    session_id=payload.session_id,
+                    source_path=source_path,
+                    provider=payload.provider,
+                    seed=payload.parameters.seed,
+                )
+            ]
+
+    return FakeLocalFluxProvider
 
 
 def test_confirm_generation_runs_provider_and_returns_safe_image(monkeypatch, tmp_path) -> None:
@@ -77,6 +105,30 @@ def test_confirm_generation_runs_provider_and_returns_safe_image(monkeypatch, tm
     assert len(jobs) == 1
     assert len(images) == 1
     assert "cinematic city" in jobs[0].parameters_json
+
+
+def test_confirm_generation_runs_local_flux_provider(monkeypatch, tmp_path) -> None:
+    from app.api import generation
+
+    monkeypatch.setattr(generation, "LocalFluxProvider", fake_local_flux_provider(tmp_path))
+    app, client = make_test_app(tmp_path)
+    session_id = client.post("/sessions", json={"title": "Local Flux"}).json()["session_id"]
+
+    response = client.post("/generation/confirm", json=local_flux_generation_payload(session_id))
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["provider"] == "local_flux"
+    assert payload["status"] == "succeeded"
+    assert payload["images"][0]["provider"] == "local_flux"
+    assert payload["images"][0]["url"].startswith(
+        f"/files/sessions/{session_id}/generated-images/img_"
+    )
+
+    with new_session(app.state.engine) as db:
+        jobs = db.exec(select(GenerationJobRecord)).all()
+
+    assert jobs[0].provider == "local_flux"
 
 
 def test_confirm_generation_requires_optimized_prompt(tmp_path) -> None:

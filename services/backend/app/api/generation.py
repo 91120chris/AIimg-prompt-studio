@@ -73,7 +73,7 @@ def _validate_references(db, session_id: str, reference_image_ids: list[str]) ->
         select(ReferenceImageRecord).where(
             ReferenceImageRecord.session_id == session_id,
             ReferenceImageRecord.reference_image_id.in_(reference_image_ids),
-        )
+        ).order_by(ReferenceImageRecord.slot)
     ).all()
     found_ids = {record.reference_image_id for record in records}
     missing_ids = sorted(set(reference_image_ids) - found_ids)

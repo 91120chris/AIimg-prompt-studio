@@ -19,6 +19,7 @@ from app.core.questionnaire_engine import (
 )
 from app.core.session_workspace import new_id
 from app.db.models import (
+    AppSettingRecord,
     AgentTurnRecord,
     GeneratedImageRecord,
     GenerationJobRecord,
@@ -27,6 +28,8 @@ from app.db.models import (
     QuestionnaireAnswerRecord,
     QuestionnaireRecord,
     SessionRecord,
+    SkillVersionRecord,
+    TemplateVersionRecord,
 )
 from app.db.session import new_session
 from app.providers.codex.codex_agent_provider import CodexAgentRunner
@@ -67,6 +70,105 @@ def _context_text(value: str, *, include: bool, label: str) -> str:
     if include:
         return value
     return f"[{label} context hidden by user.]"
+
+
+def _skill_enabled_key(skill_id: str) -> str:
+    return f"skill_enabled:{skill_id}"
+
+
+def _is_skill_enabled(db, skill_id: str) -> bool:
+    record = db.get(AppSettingRecord, _skill_enabled_key(skill_id))
+    if record is None:
+        return True
+    return record.value != "0"
+
+
+def _latest_skills(db) -> list[SkillVersionRecord]:
+    records = db.exec(
+        select(SkillVersionRecord).order_by(
+            SkillVersionRecord.created_at,
+            SkillVersionRecord.skill_version_id,
+        )
+    ).all()
+    latest_by_id: dict[str, SkillVersionRecord] = {}
+    for record in records:
+        latest_by_id[record.skill_id] = record
+    return list(latest_by_id.values())
+
+
+def _latest_template(db, template_id: str) -> TemplateVersionRecord | None:
+    return db.exec(
+        select(TemplateVersionRecord)
+        .where(TemplateVersionRecord.template_id == template_id)
+        .order_by(
+            TemplateVersionRecord.created_at.desc(),
+            TemplateVersionRecord.template_version_id.desc(),
+        )
+    ).first()
+
+
+def _template_context(db, template_id: str | None, mode: str) -> str:
+    if not template_id:
+        return "Selected template: auto-detect."
+    record = _latest_template(db, template_id)
+    if record is None:
+        raise _structured_http_error(
+            422,
+            StructuredError(
+                code="template_not_found",
+                message="Selected template was not found.",
+                suggestion="Please choose an existing template or use auto-detect.",
+            ),
+        )
+    try:
+        payload = json.loads(record.content)
+    except json.JSONDecodeError as error:
+        raise _structured_http_error(
+            422,
+            StructuredError(
+                code="template_invalid",
+                message="Selected template is not valid JSON.",
+                suggestion=str(error),
+            ),
+        ) from error
+    applies_to = payload.get("applies_to") if isinstance(payload, dict) else None
+    if not isinstance(applies_to, list) or mode not in applies_to:
+        raise _structured_http_error(
+            422,
+            StructuredError(
+                code="template_mode_mismatch",
+                message="Selected template does not support the current workflow mode.",
+                suggestion=f"Choose a template that applies to {mode}.",
+            ),
+        )
+    return f"Selected template JSON:\n{record.content}"
+
+
+def _registry_context(
+    db,
+    payload: AgentRequestPayload,
+    *,
+    mode_override: str | None = None,
+) -> str:
+    enabled_skills = [
+        record
+        for record in _latest_skills(db)
+        if _is_skill_enabled(db, record.skill_id)
+    ]
+    skill_text = "\n\n".join(
+        f"Skill: {record.skill_id}\n{record.content}" for record in enabled_skills
+    )
+    mode = mode_override or getattr(payload, "mode", "t2i")
+    template_text = _template_context(db, getattr(payload, "template_id", None), mode)
+    return (
+        "Use only the enabled skills below. Ignore disabled skills.\n\n"
+        f"{skill_text or 'No enabled skills.'}\n\n"
+        f"{template_text}"
+    )
+
+
+def _with_registry_context(prompt: str, registry_context: str) -> str:
+    return f"Registry context:\n{registry_context}\n\n{prompt}"
 
 
 def _structured_http_error(status_code: int, error: StructuredError) -> HTTPException:
@@ -289,9 +391,10 @@ def create_agent_turn(payload: AgentTurnRequest, request: Request) -> AgentTurnR
                 text=payload.original_prompt,
             )
         )
+        registry_context = _registry_context(db, payload)
         response = _run_questionnaire_agent(
             settings,
-            build_questionnaire_prompt(payload),
+            _with_registry_context(build_questionnaire_prompt(payload), registry_context),
             payload,
         )
         response = _ensure_unique_questionnaire_id(db, response)
@@ -338,9 +441,13 @@ def answer_questionnaire(
             include=payload.include_original_prompt_context,
             label="Original prompt",
         )
+        registry_context = _registry_context(db, payload)
         response = _run_agent(
             settings,
-            build_optimization_prompt(original_prompt, questionnaire, payload),
+            _with_registry_context(
+                build_optimization_prompt(original_prompt, questionnaire, payload),
+                registry_context,
+            ),
             payload,
         )
         response = _ensure_unique_questionnaire_id(db, response)
@@ -380,13 +487,17 @@ def create_feedback_questionnaire(
             include=payload.include_optimized_prompt_context,
             label="Optimized prompt",
         )
+        registry_context = _registry_context(db, payload, mode_override=job.mode)
         response = _run_questionnaire_agent(
             settings,
-            build_feedback_questionnaire_prompt(
-                original_prompt=original_prompt,
-                optimized_prompt=optimized_prompt,
-                generation_job=_generation_job_payload(job),
-                generated_images=_generated_image_payloads(images),
+            _with_registry_context(
+                build_feedback_questionnaire_prompt(
+                    original_prompt=original_prompt,
+                    optimized_prompt=optimized_prompt,
+                    generation_job=_generation_job_payload(job),
+                    generated_images=_generated_image_payloads(images),
+                ),
+                registry_context,
             ),
             payload,
         )
@@ -441,15 +552,19 @@ def refine_prompt_from_feedback(
             include=payload.include_optimized_prompt_context,
             label="Optimized prompt",
         )
+        registry_context = _registry_context(db, payload, mode_override=job.mode)
         response = _run_agent(
             settings,
-            build_feedback_refinement_prompt(
-                original_prompt=original_prompt,
-                previous_optimized_prompt=previous_optimized_prompt,
-                questionnaire=questionnaire,
-                answers=payload,
-                generation_job=_generation_job_payload(job),
-                generated_images=_generated_image_payloads(images),
+            _with_registry_context(
+                build_feedback_refinement_prompt(
+                    original_prompt=original_prompt,
+                    previous_optimized_prompt=previous_optimized_prompt,
+                    questionnaire=questionnaire,
+                    answers=payload,
+                    generation_job=_generation_job_payload(job),
+                    generated_images=_generated_image_payloads(images),
+                ),
+                registry_context,
             ),
             payload,
         )

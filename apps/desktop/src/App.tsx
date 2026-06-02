@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  Copy,
   Database,
   Download,
+  Eye,
   FolderOpen,
   History,
+  Plus,
   RefreshCcw,
   Save,
   Settings as SettingsIcon,
@@ -30,6 +33,8 @@ import {
   type SafeSettingsResponse,
   type SecretStatusResponse,
   type SessionResponse,
+  type TemplatePreviewResponse,
+  type TemplateValidationResponse,
   agentTurnResponseSchema,
   codexModelsResponseSchema,
   codexStatusResponseSchema,
@@ -43,11 +48,14 @@ import {
   ollamaModelsResponseSchema,
   ollamaStatusResponseSchema,
   referenceImageResponseSchema,
+  registryItemResponseSchema,
   registryItemsResponseSchema,
   safeSettingsResponseSchema,
   secretStatusResponseSchema,
   sessionResponseSchema,
   sessionsResponseSchema,
+  templatePreviewResponseSchema,
+  templateValidationResponseSchema,
 } from "./schemas/api.ts";
 
 type BackendStatus = "checking" | "connected" | "disconnected";
@@ -153,7 +161,10 @@ async function readErrorMessage(response: Response): Promise<string> {
     const payload = await response.json();
     const detail = payload?.detail;
     if (detail?.message) {
-      return detail.suggestion ? `${detail.message} ${detail.suggestion}` : detail.message;
+      const errors = Array.isArray(detail.errors) ? ` ${detail.errors.join(" ")}` : "";
+      return detail.suggestion
+        ? `${detail.message} ${detail.suggestion}${errors}`
+        : `${detail.message}${errors}`;
     }
   } catch {
     // Fall back to HTTP status below when the backend did not send JSON.
@@ -177,6 +188,17 @@ function statusText(value: boolean | undefined): string {
 
 function imageProviderLabel(provider: ImageProvider): string {
   return provider === "local_flux" ? "Local Flux" : "Codex Image";
+}
+
+function templateName(template: RegistryItemResponse): string {
+  try {
+    const payload = JSON.parse(template.content) as { name?: unknown };
+    return typeof payload.name === "string" && payload.name.trim()
+      ? payload.name
+      : template.item_id;
+  } catch {
+    return template.item_id;
+  }
 }
 
 function formatSessionTime(value: string): string {
@@ -299,6 +321,12 @@ function App() {
   const [managerSkills, setManagerSkills] = useState<RegistryItemResponse[]>([]);
   const [managerTemplates, setManagerTemplates] = useState<RegistryItemResponse[]>([]);
   const [managerLogs, setManagerLogs] = useState<LogResponse[]>([]);
+  const [templates, setTemplates] = useState<RegistryItemResponse[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
+  const [managerSelectedTemplateId, setManagerSelectedTemplateId] = useState("");
+  const [templateEditorContent, setTemplateEditorContent] = useState("");
+  const [templateValidation, setTemplateValidation] = useState<TemplateValidationResponse | null>(null);
+  const [templatePreview, setTemplatePreview] = useState<TemplatePreviewResponse | null>(null);
   const [localFluxStatus, setLocalFluxStatus] = useState<LocalFluxStatusResponse | null>(null);
   const [localFluxDraft, setLocalFluxDraft] =
     useState<LocalFluxSettingsResponse>(fallbackLocalFluxSettings);
@@ -333,10 +361,20 @@ function App() {
     () => managerModels.find((model) => model.provider === LOCAL_FLUX_PROVIDER_ID) ?? null,
     [managerModels],
   );
+  const selectedTemplate = useMemo(
+    () => templates.find((template) => template.item_id === selectedTemplateId) ?? null,
+    [selectedTemplateId, templates],
+  );
 
   useEffect(() => {
     setCodexOptionsDraft(codexModels.model_options.join(", "));
   }, [codexModels.model_options]);
+
+  useEffect(() => {
+    if (selectedTemplateId && !templates.some((template) => template.item_id === selectedTemplateId)) {
+      setSelectedTemplateId("");
+    }
+  }, [selectedTemplateId, templates]);
 
   useEffect(() => {
     if (!settingsOpen) {
@@ -633,6 +671,7 @@ function App() {
     return {
       include_original_prompt_context: includeOriginalPromptContext,
       include_optimized_prompt_context: includeOptimizedPromptContext,
+      template_id: selectedTemplateId || null,
     };
   }
 
@@ -745,7 +784,12 @@ function App() {
       setManagerModels(models);
       setManagerSkills(skills);
       setManagerTemplates(templates);
+      setTemplates(templates);
       setManagerLogs(logs);
+      if (!managerSelectedTemplateId && templates.length > 0) {
+        setManagerSelectedTemplateId(templates[0].item_id);
+        setTemplateEditorContent(templates[0].content);
+      }
       setManagerMessage(
         `已載入 ${models.length} models / ${skills.length} skills / ${templates.length} templates / ${logs.length} logs`,
       );
@@ -762,6 +806,172 @@ function App() {
     setLocalFluxOpen(false);
     setManagerOpen(true);
     await refreshManagerData();
+  }
+
+  function selectManagerTemplate(template: RegistryItemResponse) {
+    setManagerSelectedTemplateId(template.item_id);
+    setTemplateEditorContent(template.content);
+    setTemplateValidation(null);
+    setTemplatePreview(null);
+  }
+
+  function startNewTemplate() {
+    const id = `custom-template-${Date.now()}`;
+    setManagerSelectedTemplateId("");
+    setTemplateEditorContent(
+      JSON.stringify(
+        {
+          id,
+          name: "Custom Template",
+          applies_to: ["t2i", "i2i"],
+          description: "Describe when this template should be used.",
+          questions: [
+            {
+              id: "subject",
+              type: "text",
+              label: "Subject",
+              required: true,
+            },
+          ],
+          prompt_structure: {
+            must_include: ["subject", "composition", "lighting"],
+            avoid: [],
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    setTemplateValidation(null);
+    setTemplatePreview(null);
+  }
+
+  async function toggleSkillEnabled(skill: RegistryItemResponse, enabled: boolean) {
+    setManagerBusy(true);
+    setManagerMessage(null);
+    try {
+      const response = await fetch(`${backendBaseUrl}/skills/${skill.item_id}/enabled`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled }),
+      });
+      if (!response.ok) {
+        throw new Error(await readErrorMessage(response));
+      }
+      const updated = await response.json();
+      setManagerSkills((current) =>
+        current.map((item) => (item.item_id === skill.item_id ? registryItemResponseSchema.parse(updated) : item)),
+      );
+      setManagerMessage(`${skill.item_id} ${enabled ? "enabled" : "disabled"}`);
+    } catch (error) {
+      setManagerMessage(error instanceof Error ? error.message : "Skill 狀態更新失敗");
+    } finally {
+      setManagerBusy(false);
+    }
+  }
+
+  async function validateTemplateEditor() {
+    setManagerBusy(true);
+    setManagerMessage(null);
+    try {
+      const response = await fetch(`${backendBaseUrl}/templates/validate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: templateEditorContent }),
+      });
+      if (!response.ok) {
+        throw new Error(await readErrorMessage(response));
+      }
+      const validation = templateValidationResponseSchema.parse(await response.json());
+      setTemplateValidation(validation);
+      setManagerMessage(validation.valid ? "Template 驗證通過" : validation.errors.join(" "));
+    } catch (error) {
+      setManagerMessage(error instanceof Error ? error.message : "Template 驗證失敗");
+    } finally {
+      setManagerBusy(false);
+    }
+  }
+
+  async function previewTemplateEditor() {
+    setManagerBusy(true);
+    setManagerMessage(null);
+    try {
+      const response = await fetch(`${backendBaseUrl}/templates/preview`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: templateEditorContent }),
+      });
+      if (!response.ok) {
+        throw new Error(await readErrorMessage(response));
+      }
+      const preview = templatePreviewResponseSchema.parse(await response.json());
+      setTemplatePreview(preview);
+      setManagerMessage(preview.valid ? "Template preview 已更新" : preview.errors.join(" "));
+    } catch (error) {
+      setManagerMessage(error instanceof Error ? error.message : "Template preview 失敗");
+    } finally {
+      setManagerBusy(false);
+    }
+  }
+
+  async function saveTemplateEditor() {
+    setManagerBusy(true);
+    setManagerMessage(null);
+    try {
+      const method = managerSelectedTemplateId ? "PUT" : "POST";
+      const path = managerSelectedTemplateId
+        ? `/templates/${managerSelectedTemplateId}`
+        : "/templates";
+      const response = await fetch(`${backendBaseUrl}${path}`, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: templateEditorContent }),
+      });
+      if (!response.ok) {
+        throw new Error(await readErrorMessage(response));
+      }
+      const updated = registryItemResponseSchema.parse(await response.json());
+      setManagerSelectedTemplateId(updated.item_id);
+      setTemplateEditorContent(updated.content);
+      setTemplateValidation(null);
+      setTemplatePreview(null);
+      await refreshManagerData();
+      setSelectedTemplateId(updated.item_id);
+      setManagerMessage("Template 已儲存");
+    } catch (error) {
+      setManagerMessage(error instanceof Error ? error.message : "Template 儲存失敗");
+    } finally {
+      setManagerBusy(false);
+    }
+  }
+
+  async function duplicateSelectedTemplate() {
+    if (!managerSelectedTemplateId) {
+      setManagerMessage("請先選擇要複製的 template");
+      return;
+    }
+    setManagerBusy(true);
+    setManagerMessage(null);
+    try {
+      const response = await fetch(`${backendBaseUrl}/templates/${managerSelectedTemplateId}/duplicate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      if (!response.ok) {
+        throw new Error(await readErrorMessage(response));
+      }
+      const duplicated = registryItemResponseSchema.parse(await response.json());
+      setManagerSelectedTemplateId(duplicated.item_id);
+      setTemplateEditorContent(duplicated.content);
+      await refreshManagerData();
+      setSelectedTemplateId(duplicated.item_id);
+      setManagerMessage("Template 已複製");
+    } catch (error) {
+      setManagerMessage(error instanceof Error ? error.message : "Template 複製失敗");
+    } finally {
+      setManagerBusy(false);
+    }
   }
 
   function updateLocalFluxDraft<K extends keyof LocalFluxSettingsResponse>(
@@ -987,7 +1197,16 @@ function App() {
   function applyAgentTurn(turn: AgentTurnResponse) {
     setAgentTurn(turn);
     if (turn.kind === "questionnaire") {
-      setAnswerDrafts(defaultDraftsForQuestionnaire(turn.questionnaire));
+      setAnswerDrafts((current) => {
+        const defaults = defaultDraftsForQuestionnaire(turn.questionnaire);
+        if (
+          agentTurn?.kind === "questionnaire" &&
+          agentTurn.questionnaire.questionnaire_id === turn.questionnaire.questionnaire_id
+        ) {
+          return { ...defaults, ...current };
+        }
+        return defaults;
+      });
       setAgentMessage(turn.message);
       return;
     }
@@ -1067,6 +1286,7 @@ function App() {
             session_id: currentSession.session_id,
             questionnaire_id: questionnaire.questionnaire_id,
             ...(isFeedbackQuestionnaire ? { job_id: feedbackQuestionnaireContext.jobId } : {}),
+            mode: workflowMode,
             ...agentProviderPayload(),
             ...agentContextPayload(),
             answers,
@@ -1088,6 +1308,10 @@ function App() {
 
   async function requestFeedbackQuestionnaire(job: GenerationJobResponse) {
     if (job.status !== "succeeded" || job.images.length === 0) {
+      return;
+    }
+    if (feedbackQuestionnaireContext && agentTurn?.kind === "questionnaire") {
+      setAgentMessage("回饋問卷已保留；你可以繼續試 seed，準備好再送出目前問卷。");
       return;
     }
 
@@ -1132,6 +1356,16 @@ function App() {
       return;
     }
 
+    const sortedReferenceImages = [...referenceImages].sort((a, b) => a.slot - b.slot);
+    if (
+      imageProvider === "local_flux" &&
+      workflowMode === "i2i" &&
+      sortedReferenceImages.length === 0
+    ) {
+      setErrorMessage("Local Flux I2I 至少需要 1 張參考圖片。");
+      return;
+    }
+
     setGenerationBusy(true);
     setGenerationMessage("正在確認並生成圖片...");
     setErrorMessage(null);
@@ -1152,7 +1386,7 @@ function App() {
             guidance: localFluxDraft.guidance,
             seed: seedValue === null ? null : Number.isFinite(seedValue) ? seedValue : null,
           },
-          reference_image_ids: referenceImages.map((image) => image.reference_image_id),
+          reference_image_ids: sortedReferenceImages.map((image) => image.reference_image_id),
           codex_model: codexModels.default_model,
           codex_reasoning_effort: codexModels.default_reasoning_effort,
           codex_reasoning_summary: codexModels.default_reasoning_summary,
@@ -1168,7 +1402,6 @@ function App() {
       if (job.error) {
         setErrorMessage(job.error.suggestion ? `${job.error.message} ${job.error.suggestion}` : job.error.message);
       }
-      await requestFeedbackQuestionnaire(job);
     } catch (error) {
       setGenerationMessage("建立生成工作失敗");
       setErrorMessage(error instanceof Error ? error.message : "無法建立生成工作");
@@ -1222,6 +1455,7 @@ function App() {
           ollamaModelsPayload,
           localFluxPayload,
           secretsPayload,
+          templatesPayload,
         ] = await Promise.allSettled([
           fetchJson("/settings/safe", safeSettingsResponseSchema, controller.signal),
           fetchJson("/providers/codex/status", codexStatusResponseSchema, controller.signal),
@@ -1230,6 +1464,7 @@ function App() {
           fetchJson("/providers/ollama/models", ollamaModelsResponseSchema, controller.signal),
           fetchJson("/providers/local-flux/status", localFluxStatusResponseSchema, controller.signal),
           fetchJson("/security/secrets/status", secretStatusResponseSchema, controller.signal),
+          fetchJson("/templates", registryItemsResponseSchema, controller.signal),
         ]);
 
         if (settingsPayload.status === "fulfilled") {
@@ -1253,6 +1488,9 @@ function App() {
         }
         if (secretsPayload.status === "fulfilled") {
           setSecretStatus(secretsPayload.value);
+        }
+        if (templatesPayload.status === "fulfilled") {
+          setTemplates(templatesPayload.value);
         }
       } catch (error) {
         if (controller.signal.aborted) {
@@ -1839,10 +2077,16 @@ function App() {
             </label>
             <label>
               模板
-              <select defaultValue="general">
-                <option value="general">通用影像</option>
-                <option value="product">產品視覺</option>
-                <option value="character">角色設計</option>
+              <select
+                value={selectedTemplateId}
+                onChange={(event) => setSelectedTemplateId(event.target.value)}
+              >
+                <option value="">Auto-detect</option>
+                {templates.map((template) => (
+                  <option key={template.item_id} value={template.item_id}>
+                    {templateName(template)}
+                  </option>
+                ))}
               </select>
             </label>
           </div>
@@ -1868,6 +2112,7 @@ function App() {
               <p>
                 {workflowMode.toUpperCase()} / {imageProviderLabel(imageProvider)} / Seed{" "}
                 {localFluxDraft.seed ?? "隨機"}
+                {selectedTemplate ? ` / ${templateName(selectedTemplate)}` : " / Auto-detect"}
               </p>
               {generationMessage ? <p className="generation-note">{generationMessage}</p> : null}
               <div className="context-toggles" aria-label="Agent context">
@@ -1918,6 +2163,22 @@ function App() {
               >
                 {generationBusy ? "生成中" : "確認生成"}
               </button>
+              <button
+                type="button"
+                disabled={
+                  agentBusy ||
+                  !generationJob ||
+                  generationJob.status !== "succeeded" ||
+                  generationJob.images.length === 0
+                }
+                onClick={() => {
+                  if (generationJob) {
+                    void requestFeedbackQuestionnaire(generationJob);
+                  }
+                }}
+              >
+                回饋 / 修正 Prompt
+              </button>
               {generationJob && generationJob.status === "queued" ? (
                 <button
                   type="button"
@@ -1953,7 +2214,7 @@ function App() {
                     <strong>{generatedPreviewImage.filename}</strong>
                     <p>
                       {generatedPreviewImage.width} x {generatedPreviewImage.height} /{" "}
-                      {generatedPreviewStatus}
+                      {generatedPreviewStatus} / Seed {generatedPreviewImage.seed ?? "n/a"}
                     </p>
                   </div>
                   <button
@@ -2143,6 +2404,17 @@ function App() {
                     managerSkills.map((skill) => (
                       <div className="history-session" key={skill.item_id}>
                         <strong>{skill.item_id}</strong>
+                        <label>
+                          <input
+                            type="checkbox"
+                            checked={skill.enabled ?? true}
+                            disabled={managerBusy}
+                            onChange={(event) => {
+                              void toggleSkillEnabled(skill, event.target.checked);
+                            }}
+                          />
+                          {skill.enabled ?? true ? "Enabled" : "Disabled"}
+                        </label>
                         <span>{skill.latest_version_id ?? "未建立版本"}</span>
                         <small>{skill.content}</small>
                       </div>
@@ -2153,19 +2425,114 @@ function App() {
               <section className="settings-section">
                 <h3>Templates</h3>
                 <p>{managerBusy ? "正在載入模板..." : `${managerTemplates.length} 個模板`}</p>
+                <div className="manager-actions" aria-label="Template 操作">
+                  <button
+                    className="command-button"
+                    type="button"
+                    disabled={managerBusy}
+                    onClick={startNewTemplate}
+                  >
+                    <Plus size={16} aria-hidden="true" />
+                    新增
+                  </button>
+                  <button
+                    className="command-button"
+                    type="button"
+                    disabled={managerBusy || !managerSelectedTemplateId}
+                    onClick={() => {
+                      void duplicateSelectedTemplate();
+                    }}
+                  >
+                    <Copy size={16} aria-hidden="true" />
+                    複製
+                  </button>
+                  <button
+                    className="command-button"
+                    type="button"
+                    disabled={managerBusy || !templateEditorContent.trim()}
+                    onClick={() => {
+                      void validateTemplateEditor();
+                    }}
+                  >
+                    <RefreshCcw size={16} aria-hidden="true" />
+                    驗證
+                  </button>
+                  <button
+                    className="command-button"
+                    type="button"
+                    disabled={managerBusy || !templateEditorContent.trim()}
+                    onClick={() => {
+                      void previewTemplateEditor();
+                    }}
+                  >
+                    <Eye size={16} aria-hidden="true" />
+                    預覽
+                  </button>
+                  <button
+                    className="command-button command-button-primary"
+                    type="button"
+                    disabled={managerBusy || !templateEditorContent.trim()}
+                    onClick={() => {
+                      void saveTemplateEditor();
+                    }}
+                  >
+                    <Save size={16} aria-hidden="true" />
+                    儲存
+                  </button>
+                </div>
                 <div className="history-list" aria-label="模板清單">
                   {managerTemplates.length === 0 ? (
                     <p>尚無模板版本。</p>
                   ) : (
                     managerTemplates.map((template) => (
-                      <div className="history-session" key={template.item_id}>
+                      <button
+                        className={`history-session${
+                          managerSelectedTemplateId === template.item_id ? " is-active" : ""
+                        }`}
+                        key={template.item_id}
+                        type="button"
+                        onClick={() => selectManagerTemplate(template)}
+                      >
                         <strong>{template.item_id}</strong>
                         <span>{template.latest_version_id ?? "未建立版本"}</span>
-                        <small>{template.content}</small>
-                      </div>
+                        <small>{templateName(template)}</small>
+                      </button>
                     ))
                   )}
                 </div>
+                <label>
+                  Template JSON
+                  <textarea
+                    value={templateEditorContent}
+                    rows={12}
+                    placeholder="選擇 template 或新增一個 template。"
+                    onChange={(event) => {
+                      setTemplateEditorContent(event.target.value);
+                      setTemplateValidation(null);
+                      setTemplatePreview(null);
+                    }}
+                  />
+                </label>
+                {templateValidation ? (
+                  <p className="generation-note">
+                    {templateValidation.valid
+                      ? `驗證通過：${templateValidation.template_id}`
+                      : `驗證失敗：${templateValidation.errors.join(" ")}`}
+                  </p>
+                ) : null}
+                {templatePreview?.questionnaire ? (
+                  <div className="history-list" aria-label="Template preview">
+                    <div className="history-session">
+                      <strong>{templatePreview.questionnaire.title}</strong>
+                      <span>{templatePreview.questionnaire.questions.length} questions</span>
+                      <small>
+                        {templatePreview.questionnaire.questions
+                          .map((question) => question.label)
+                          .join(" / ")}
+                      </small>
+                    </div>
+                  </div>
+                ) : null}
               </section>
               <section className="settings-section">
                 <h3>Logs</h3>

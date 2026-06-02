@@ -224,3 +224,92 @@ def test_patch_proposal_with_content_requires_item_id(tmp_path) -> None:
 
     assert response.status_code == 422
     assert response.json()["detail"]["code"] == "missing_registry_item_id"
+
+
+def test_skill_enabled_can_be_toggled(tmp_path) -> None:
+    _, client = make_client(tmp_path)
+
+    initial = client.get("/skills/questionnaire-designer")
+    disabled = client.patch("/skills/questionnaire-designer/enabled", json={"enabled": False})
+    after_disable = client.get("/skills/questionnaire-designer")
+    enabled = client.patch("/skills/questionnaire-designer/enabled", json={"enabled": True})
+
+    assert initial.status_code == 200
+    assert initial.json()["enabled"] is True
+    assert disabled.status_code == 200
+    assert disabled.json()["enabled"] is False
+    assert after_disable.json()["enabled"] is False
+    assert enabled.json()["enabled"] is True
+
+
+def test_template_create_update_duplicate_validate_and_preview(tmp_path) -> None:
+    _, client = make_client(tmp_path)
+    content = """
+    {
+      "id": "custom-product",
+      "name": "Custom Product",
+      "applies_to": ["t2i", "i2i"],
+      "description": "A compact product template.",
+      "questions": [
+        {"id": "subject", "type": "text", "label": "Subject", "required": true},
+        {
+          "id": "mood",
+          "type": "single_choice",
+          "label": "Mood",
+          "options": ["premium", "playful"],
+          "required": false
+        },
+        {"id": "notes", "type": "textarea", "label": "Notes", "required": false}
+      ],
+      "prompt_structure": {"must_include": ["subject"], "avoid": []}
+    }
+    """
+
+    validate_response = client.post("/templates/validate", json={"content": content})
+    preview_response = client.post("/templates/preview", json={"content": content})
+    create_response = client.post("/templates", json={"content": content})
+    updated_content = content.replace("Custom Product", "Updated Product")
+    update_response = client.put("/templates/custom-product", json={"content": updated_content})
+    duplicate_response = client.post("/templates/custom-product/duplicate", json={})
+    list_response = client.get("/templates")
+
+    assert validate_response.status_code == 200
+    assert validate_response.json()["valid"] is True
+    assert validate_response.json()["template_id"] == "custom-product"
+    assert preview_response.status_code == 200
+    preview = preview_response.json()
+    assert preview["valid"] is True
+    assert preview["questionnaire"]["questions"][0]["kind"] == "text"
+    assert preview["questionnaire"]["questions"][1]["kind"] == "choice"
+    assert create_response.status_code == 200
+    assert create_response.json()["item_id"] == "custom-product"
+    assert update_response.status_code == 200
+    assert "Updated Product" in update_response.json()["content"]
+    assert duplicate_response.status_code == 200
+    assert duplicate_response.json()["item_id"].startswith("custom-product-copy")
+    assert {"custom-product", duplicate_response.json()["item_id"]}.issubset(
+        {item["item_id"] for item in list_response.json()}
+    )
+
+
+def test_template_create_rejects_duplicate_and_invalid_content(tmp_path) -> None:
+    _, client = make_client(tmp_path)
+    content = """
+    {
+      "id": "custom-invalid-check",
+      "name": "Custom",
+      "applies_to": ["t2i"],
+      "questions": [{"id": "subject", "type": "text", "label": "Subject"}],
+      "prompt_structure": {}
+    }
+    """
+
+    first = client.post("/templates", json={"content": content})
+    duplicate = client.post("/templates", json={"content": content})
+    invalid = client.post("/templates/validate", json={"content": "{\"id\":\"broken\"}"})
+
+    assert first.status_code == 200
+    assert duplicate.status_code == 409
+    assert duplicate.json()["detail"]["code"] == "template_id_exists"
+    assert invalid.status_code == 200
+    assert invalid.json()["valid"] is False

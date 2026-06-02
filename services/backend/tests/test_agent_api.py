@@ -2,6 +2,8 @@ from fastapi.testclient import TestClient
 from sqlmodel import select
 
 from app.db.models import (
+    SkillVersionRecord,
+    TemplateVersionRecord,
     GeneratedImageRecord,
     GenerationJobRecord,
     PromptRecord,
@@ -658,3 +660,126 @@ def test_feedback_questionnaire_can_hide_prompt_context(monkeypatch, tmp_path) -
     assert "[Optimized prompt context hidden by user.]" in prompt
     assert "original secret prompt" not in prompt
     assert "optimized secret prompt" not in prompt
+
+
+def test_agent_turn_injects_enabled_skills_and_selected_template(monkeypatch, tmp_path) -> None:
+    from app.api import agent
+
+    questionnaire = Questionnaire(
+        questionnaire_id="q_registry_context",
+        title="Registry",
+        questions=[
+            TextQuestion(
+                kind="text",
+                question_id="style",
+                label="Style",
+                prompt="What style?",
+                required=True,
+            )
+        ],
+    )
+    FakeCodexRunner.responses = [
+        QuestionnaireTurnResponse(
+            kind="questionnaire",
+            message="Registry questions",
+            questionnaire=questionnaire,
+        )
+    ]
+    FakeCodexRunner.prompts = []
+    monkeypatch.setattr(agent, "CodexAgentRunner", FakeCodexRunner)
+
+    app, client = make_test_app(tmp_path)
+    session_id = client.post("/sessions", json={"title": "Test"}).json()["session_id"]
+    with new_session(app.state.engine) as db:
+        db.add(
+            SkillVersionRecord(
+                skill_version_id="skillv_allowed",
+                skill_id="allowed-skill",
+                content="allowed registry skill marker",
+            )
+        )
+        db.add(
+            SkillVersionRecord(
+                skill_version_id="skillv_blocked",
+                skill_id="blocked-skill",
+                content="blocked registry skill marker",
+            )
+        )
+        db.add(
+            TemplateVersionRecord(
+                template_version_id="tmplv_registry",
+                template_id="registry-template",
+                content="""
+                {
+                  "id": "registry-template",
+                  "name": "Registry Template",
+                  "applies_to": ["t2i"],
+                  "questions": [{"id": "subject", "type": "text", "label": "Subject"}],
+                  "prompt_structure": {}
+                }
+                """,
+            )
+        )
+        db.commit()
+    client.patch("/skills/blocked-skill/enabled", json={"enabled": False})
+
+    response = client.post(
+        "/agent/turn",
+        json={
+            "session_id": session_id,
+            "original_prompt": "a product photo",
+            "mode": "t2i",
+            "template_id": "registry-template",
+            "provider": "codex_cli",
+        },
+    )
+
+    assert response.status_code == 200
+    prompt = FakeCodexRunner.prompts[0]
+    assert "allowed registry skill marker" in prompt
+    assert "blocked registry skill marker" not in prompt
+    assert "registry-template" in prompt
+    assert "Registry Template" in prompt
+
+
+def test_agent_turn_rejects_template_mode_mismatch(monkeypatch, tmp_path) -> None:
+    from app.api import agent
+
+    FakeCodexRunner.responses = []
+    FakeCodexRunner.prompts = []
+    monkeypatch.setattr(agent, "CodexAgentRunner", FakeCodexRunner)
+
+    app, client = make_test_app(tmp_path)
+    session_id = client.post("/sessions", json={"title": "Test"}).json()["session_id"]
+    with new_session(app.state.engine) as db:
+        db.add(
+            TemplateVersionRecord(
+                template_version_id="tmplv_i2i_only",
+                template_id="i2i-only",
+                content="""
+                {
+                  "id": "i2i-only",
+                  "name": "I2I Only",
+                  "applies_to": ["i2i"],
+                  "questions": [{"id": "subject", "type": "text", "label": "Subject"}],
+                  "prompt_structure": {}
+                }
+                """,
+            )
+        )
+        db.commit()
+
+    response = client.post(
+        "/agent/turn",
+        json={
+            "session_id": session_id,
+            "original_prompt": "a product photo",
+            "mode": "t2i",
+            "template_id": "i2i-only",
+            "provider": "codex_cli",
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "template_mode_mismatch"
+    assert FakeCodexRunner.prompts == []

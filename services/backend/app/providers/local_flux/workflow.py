@@ -1,5 +1,6 @@
 import copy
 import json
+import secrets
 from pathlib import Path
 from typing import Any, Literal
 
@@ -97,6 +98,7 @@ def patch_prompt(
     *,
     job_id: str,
     uploaded_reference_names: list[str],
+    effective_seed: int | None = None,
 ) -> dict[str, Any]:
     patched = copy.deepcopy(prompt)
     missing: list[str] = []
@@ -122,9 +124,7 @@ def patch_prompt(
         missing,
     )
 
-    seed = payload.parameters.seed if payload.parameters.seed is not None else settings.local_flux_seed
-    if seed is None:
-        seed = 0
+    seed = effective_seed if effective_seed is not None else resolve_effective_seed(payload)
     for key, value in {
         "seed": seed,
         "steps": settings.local_flux_steps,
@@ -173,6 +173,12 @@ def patch_prompt(
     return patched
 
 
+def resolve_effective_seed(payload: GenerationConfirmRequest) -> int:
+    if payload.parameters.seed is not None:
+        return payload.parameters.seed
+    return secrets.randbelow(2**32)
+
+
 def validate_workflow_for_settings(
     settings: Settings,
     *,
@@ -211,6 +217,7 @@ def validate_workflow_for_settings(
             dummy_payload,
             job_id="job_validate",
             uploaded_reference_names=[f"ref_{index}.png" for index in range(reference_count)],
+            effective_seed=1,
         )
     except LocalFluxWorkflowError as error:
         return False, path, detect_workflow_format(workflow) if "workflow" in locals() else "unknown", error.missing_bindings, str(error)

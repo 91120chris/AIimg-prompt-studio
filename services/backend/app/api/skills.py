@@ -3,12 +3,13 @@ from sqlmodel import select
 
 from app.core.registry_store import apply_registry_patch_proposal
 from app.core.session_workspace import new_id
-from app.db.models import RegistryPatchProposalRecord, SkillVersionRecord
+from app.db.models import AppSettingRecord, RegistryPatchProposalRecord, SkillVersionRecord
 from app.db.session import new_session
 from app.schemas.registry import (
     RegistryItemResponse,
     RegistryPatchProposalCreateRequest,
     RegistryPatchProposalResponse,
+    SkillEnabledPatchRequest,
 )
 
 router = APIRouter(prefix="/skills", tags=["skills"])
@@ -37,6 +38,7 @@ def _item_response(record: SkillVersionRecord) -> RegistryItemResponse:
         item_id=record.skill_id,
         latest_version_id=record.skill_version_id,
         content=record.content,
+        enabled=True,
         created_at=record.created_at,
     )
 
@@ -46,6 +48,34 @@ def _clean_optional_text(value: str | None) -> str | None:
         return None
     stripped = value.strip()
     return stripped or None
+
+
+def _skill_enabled_key(skill_id: str) -> str:
+    return f"skill_enabled:{skill_id}"
+
+
+def _is_skill_enabled(db, skill_id: str) -> bool:
+    record = db.get(AppSettingRecord, _skill_enabled_key(skill_id))
+    if record is None:
+        return True
+    return record.value != "0"
+
+
+def _latest_skill(db, skill_id: str) -> SkillVersionRecord | None:
+    return db.exec(
+        select(SkillVersionRecord)
+        .where(SkillVersionRecord.skill_id == skill_id)
+        .order_by(
+            SkillVersionRecord.created_at.desc(),
+            SkillVersionRecord.skill_version_id.desc(),
+        )
+    ).first()
+
+
+def _skill_response(db, record: SkillVersionRecord) -> RegistryItemResponse:
+    response = _item_response(record)
+    response.enabled = _is_skill_enabled(db, record.skill_id)
+    return response
 
 
 @router.get("", response_model=list[RegistryItemResponse])
@@ -60,7 +90,7 @@ def list_skills(request: Request) -> list[RegistryItemResponse]:
         latest_by_id: dict[str, SkillVersionRecord] = {}
         for record in records:
             latest_by_id[record.skill_id] = record
-        return [_item_response(record) for record in latest_by_id.values()]
+        return [_skill_response(db, record) for record in latest_by_id.values()]
 
 
 @router.get("/patch-proposals", response_model=list[RegistryPatchProposalResponse])
@@ -77,20 +107,35 @@ def list_skill_patch_proposals(request: Request) -> list[RegistryPatchProposalRe
 @router.get("/{skill_id}", response_model=RegistryItemResponse)
 def get_skill(skill_id: str, request: Request) -> RegistryItemResponse:
     with new_session(_engine(request)) as db:
-        record = db.exec(
-            select(SkillVersionRecord)
-            .where(SkillVersionRecord.skill_id == skill_id)
-            .order_by(
-                SkillVersionRecord.created_at.desc(),
-                SkillVersionRecord.skill_version_id.desc(),
-            )
-        ).first()
+        record = _latest_skill(db, skill_id)
         if record is None:
             raise HTTPException(
                 status_code=404,
                 detail={"code": "skill_not_found", "message": "Skill not found."},
             )
-        return _item_response(record)
+        return _skill_response(db, record)
+
+
+@router.patch("/{skill_id}/enabled", response_model=RegistryItemResponse)
+def patch_skill_enabled(
+    skill_id: str,
+    payload: SkillEnabledPatchRequest,
+    request: Request,
+) -> RegistryItemResponse:
+    with new_session(_engine(request)) as db:
+        record = _latest_skill(db, skill_id)
+        if record is None:
+            raise HTTPException(
+                status_code=404,
+                detail={"code": "skill_not_found", "message": "Skill not found."},
+            )
+        setting = AppSettingRecord(
+            key=_skill_enabled_key(skill_id),
+            value="1" if payload.enabled else "0",
+        )
+        db.merge(setting)
+        db.commit()
+        return _skill_response(db, record)
 
 
 @router.post("/patch-proposals", response_model=RegistryPatchProposalResponse)

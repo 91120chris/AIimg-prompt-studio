@@ -219,6 +219,7 @@ export const registryItemResponseSchema = z.object({
   item_id: z.string(),
   latest_version_id: z.string().nullable(),
   content: z.string(),
+  enabled: z.boolean().nullable().optional(),
   created_at: z.string().nullable(),
 });
 
@@ -281,6 +282,20 @@ export const localFluxWorkflowValidationResponseSchema = z.object({
   message: z.string(),
 });
 
+export const templateValidationResponseSchema = z.object({
+  valid: z.boolean(),
+  template_id: z.string().nullable(),
+  name: z.string().nullable(),
+  errors: z.array(z.string()),
+});
+
+export const templatePreviewResponseSchema = z.object({
+  valid: z.boolean(),
+  template_id: z.string().nullable(),
+  questionnaire: questionnaireSchema.nullable(),
+  errors: z.array(z.string()),
+});
+
 export const logResponseSchema = z.object({
   log_id: z.string(),
   level: z.string(),
@@ -308,6 +323,8 @@ export type ReferenceImageResponse = z.infer<typeof referenceImageResponseSchema
 export type SessionResponse = z.infer<typeof sessionResponseSchema>;
 export type RegistryItemResponse = z.infer<typeof registryItemResponseSchema>;
 export type RegistryPatchProposalResponse = z.infer<typeof registryPatchProposalResponseSchema>;
+export type TemplateValidationResponse = z.infer<typeof templateValidationResponseSchema>;
+export type TemplatePreviewResponse = z.infer<typeof templatePreviewResponseSchema>;
 export type ModelInfoResponse = z.infer<typeof modelInfoResponseSchema>;
 export type LocalFluxStatusResponse = z.infer<typeof localFluxStatusResponseSchema>;
 export type LocalFluxSettingsResponse = z.infer<typeof localFluxSettingsResponseSchema>;

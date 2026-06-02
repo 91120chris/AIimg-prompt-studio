@@ -11,6 +11,7 @@ class RegistryItemResponse(StrictBaseModel):
     item_id: str
     latest_version_id: str | None = None
     content: str
+    enabled: bool | None = None
     created_at: str | None = None
 
 
@@ -29,3 +30,30 @@ class RegistryPatchProposalResponse(StrictBaseModel):
     proposed_content: str | None = None
     applied_version_id: str | None = None
     created_at: str
+
+
+class SkillEnabledPatchRequest(StrictBaseModel):
+    enabled: bool
+
+
+class TemplateContentRequest(StrictBaseModel):
+    content: str
+
+
+class TemplateDuplicateRequest(StrictBaseModel):
+    new_template_id: str | None = None
+    new_name: str | None = None
+
+
+class TemplateValidationResponse(StrictBaseModel):
+    valid: bool
+    template_id: str | None = None
+    name: str | None = None
+    errors: list[str] = []
+
+
+class TemplatePreviewResponse(StrictBaseModel):
+    valid: bool
+    template_id: str | None = None
+    questionnaire: dict | None = None
+    errors: list[str] = []

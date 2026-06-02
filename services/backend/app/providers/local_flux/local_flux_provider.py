@@ -12,6 +12,7 @@ from app.providers.local_flux.workflow import (
     extract_history_images,
     load_workflow,
     patch_prompt,
+    resolve_effective_seed,
     workflow_path_for_payload,
     workflow_to_api_prompt,
 )
@@ -58,16 +59,18 @@ class LocalFluxProvider:
             workflow_path = workflow_path_for_payload(self.settings, payload)
             workflow = load_workflow(workflow_path)
             prompt = workflow_to_api_prompt(workflow)
+            effective_seed = resolve_effective_seed(payload)
             patched_prompt = patch_prompt(
                 prompt,
                 self.settings,
                 payload,
                 job_id=job.job_id,
                 uploaded_reference_names=uploaded_reference_names,
+                effective_seed=effective_seed,
             )
             prompt_id = self.client.post_prompt(patched_prompt, client_id=job.job_id)
             images = self._wait_for_images(prompt_id)
-            return self._register_outputs(db, job, payload, images)
+            return self._register_outputs(db, job, payload, images, effective_seed=effective_seed)
         except LocalFluxWorkflowError as error:
             raise LocalFluxProviderError(
                 StructuredError(
@@ -104,6 +107,7 @@ class LocalFluxProvider:
         job: GenerationJobRecord,
         payload: GenerationConfirmRequest,
         images: list[dict[str, str]],
+        effective_seed: int,
     ) -> list[GeneratedImageRecord]:
         workspace = ensure_session_workspace(self.settings, payload.session_id)
         run_dir = workspace / "generated" / "local-flux-runs" / job.job_id
@@ -125,7 +129,7 @@ class LocalFluxProvider:
                     session_id=payload.session_id,
                     source_path=output_path,
                     provider=payload.provider,
-                    seed=payload.parameters.seed or self.settings.local_flux_seed,
+                    seed=effective_seed,
                 )
             )
         return records

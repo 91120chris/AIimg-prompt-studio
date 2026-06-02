@@ -1,9 +1,7 @@
 from fastapi.testclient import TestClient
-import pytest
 from sqlmodel import select
 
 from app.db.models import (
-    CodexConversationRecord,
     GeneratedImageRecord,
     GenerationJobRecord,
     PromptRecord,
@@ -33,12 +31,9 @@ class FakeCodexRunner:
     responses = []
     prompts = []
     models = []
-    codex_session_ids = []
-    next_codex_session_id = None
 
     def __init__(self, settings):
         self.settings = settings
-        self.last_codex_session_id = None
 
     def run(
         self,
@@ -48,12 +43,9 @@ class FakeCodexRunner:
         reasoning_effort: str | None = None,
         reasoning_summary: str | None = None,
         verbosity: str | None = None,
-        codex_session_id: str | None = None,
     ):
         self.prompts.append(prompt)
         self.models.append(model)
-        self.codex_session_ids.append(codex_session_id)
-        self.last_codex_session_id = self.next_codex_session_id or codex_session_id
         return self.responses.pop(0)
 
 
@@ -69,18 +61,6 @@ class FakeOllamaRunner:
         self.prompts.append(prompt)
         self.models.append(model)
         return self.responses.pop(0)
-
-
-@pytest.fixture(autouse=True)
-def reset_fake_runners() -> None:
-    FakeCodexRunner.responses = []
-    FakeCodexRunner.prompts = []
-    FakeCodexRunner.models = []
-    FakeCodexRunner.codex_session_ids = []
-    FakeCodexRunner.next_codex_session_id = None
-    FakeOllamaRunner.responses = []
-    FakeOllamaRunner.prompts = []
-    FakeOllamaRunner.models = []
 
 
 def test_agent_questionnaire_loop_stores_questionnaire_answers_and_prompt_version(
@@ -678,77 +658,3 @@ def test_feedback_questionnaire_can_hide_prompt_context(monkeypatch, tmp_path) -
     assert "[Optimized prompt context hidden by user.]" in prompt
     assert "original secret prompt" not in prompt
     assert "optimized secret prompt" not in prompt
-
-
-def test_codex_agent_turns_resume_saved_codex_session(monkeypatch, tmp_path) -> None:
-    from app.api import agent
-
-    questionnaire = Questionnaire(
-        questionnaire_id="q_codex_resume",
-        title="Questions",
-        questions=[
-            TextQuestion(
-                kind="text",
-                question_id="style",
-                label="Style",
-                prompt="What style?",
-                required=True,
-            )
-        ],
-    )
-    FakeCodexRunner.responses = [
-        QuestionnaireTurnResponse(
-            kind="questionnaire",
-            message="Questions",
-            questionnaire=questionnaire,
-        ),
-        OptimizedPromptTurnResponse(
-            kind="optimized_prompt",
-            message="Done.",
-            optimized_prompt="cinematic glass cup",
-            prompt_version_title="v1",
-        ),
-    ]
-    FakeCodexRunner.next_codex_session_id = "019e8426-42bc-7122-bce0-608dc8f5bb00"
-    monkeypatch.setattr(agent, "CodexAgentRunner", FakeCodexRunner)
-
-    app, client = make_test_app(tmp_path)
-    session_id = client.post("/sessions", json={"title": "Test"}).json()["session_id"]
-
-    turn_response = client.post(
-        "/agent/turn",
-        json={
-            "session_id": session_id,
-            "original_prompt": "glass cup",
-            "provider": "codex_cli",
-        },
-    )
-    assert turn_response.status_code == 200
-
-    answer_response = client.post(
-        "/agent/answer-questionnaire",
-        json={
-            "session_id": session_id,
-            "questionnaire_id": "q_codex_resume",
-            "provider": "codex_cli",
-            "answers": [
-                {
-                    "kind": "text",
-                    "question_id": "style",
-                    "value": "cinematic",
-                }
-            ],
-        },
-    )
-
-    assert answer_response.status_code == 200
-    assert FakeCodexRunner.codex_session_ids == [
-        None,
-        "019e8426-42bc-7122-bce0-608dc8f5bb00",
-    ]
-
-    with new_session(app.state.engine) as db:
-        record = db.get(CodexConversationRecord, session_id)
-
-    assert record is not None
-    assert record.codex_session_id == "019e8426-42bc-7122-bce0-608dc8f5bb00"

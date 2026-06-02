@@ -24,15 +24,6 @@ class AgentTurnRecord(SQLModel, table=True):
     created_at: str = Field(default_factory=utc_now_iso)
 
 
-class CodexConversationRecord(SQLModel, table=True):
-    __tablename__ = "codex_conversations"
-
-    session_id: str = Field(primary_key=True)
-    codex_session_id: str = Field(index=True)
-    created_at: str = Field(default_factory=utc_now_iso)
-    updated_at: str = Field(default_factory=utc_now_iso)
-
-
 class QuestionnaireRecord(SQLModel, table=True):
     __tablename__ = "questionnaires"
 

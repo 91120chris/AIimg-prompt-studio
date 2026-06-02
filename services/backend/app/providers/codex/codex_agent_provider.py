@@ -11,10 +11,7 @@ from app.core.json_schema import schema_output_dir
 from app.core.prompt_compiler import build_repair_prompt
 from app.core.session_workspace import new_id
 from app.providers.codex.codex_binary_resolver import resolve_codex_binary
-from app.providers.codex.codex_command_builder import (
-    build_codex_exec_command,
-    build_codex_exec_resume_command,
-)
+from app.providers.codex.codex_command_builder import build_codex_exec_command
 from app.schemas.agent import AgentTurnResponse, ErrorTurnResponse
 from app.schemas.errors import StructuredError
 from app.schemas.provider import CodexReasoningEffort, CodexReasoningSummary, CodexVerbosity
@@ -62,7 +59,6 @@ class CodexAgentProviderError(RuntimeError):
 class CodexAgentRunner:
     settings: Settings
     executor: CommandExecutor = default_command_executor
-    last_codex_session_id: str | None = None
 
     def run(
         self,
@@ -72,7 +68,6 @@ class CodexAgentRunner:
         reasoning_effort: CodexReasoningEffort | None = None,
         reasoning_summary: CodexReasoningSummary | None = None,
         verbosity: CodexVerbosity | None = None,
-        codex_session_id: str | None = None,
     ) -> AgentTurnResponse:
         binary = resolve_codex_binary(self.settings.codex_binary_path)
         if not binary.available:
@@ -90,13 +85,12 @@ class CodexAgentRunner:
             verbosity=verbosity,
         )
         schema_path = schema_output_dir() / "agent_turn_response.schema.json"
-        active_codex_session_id = codex_session_id
 
         try:
             raw_output = self.executor(
-                self._build_agent_command(
+                build_codex_exec_command(
                     binary,
-                    active_codex_session_id,
+                    "-",
                     model=selected_model,
                     sandbox="read-only",
                     output_schema_path=schema_path,
@@ -105,18 +99,14 @@ class CodexAgentRunner:
                 self.settings.codex_timeout_seconds,
                 prompt,
             )
-            active_codex_session_id = (
-                extract_codex_session_id(raw_output) or active_codex_session_id
-            )
-            self.last_codex_session_id = active_codex_session_id
             return parse_agent_turn_response(raw_output)
         except (ValidationError, ValueError) as first_error:
             repair_prompt = build_repair_prompt(raw_output, str(first_error))
             try:
                 repair_output = self.executor(
-                    self._build_agent_command(
+                    build_codex_exec_command(
                         binary,
-                        active_codex_session_id,
+                        "-",
                         model=selected_model,
                         sandbox="read-only",
                         output_schema_path=schema_path,
@@ -125,10 +115,6 @@ class CodexAgentRunner:
                     self.settings.codex_timeout_seconds,
                     repair_prompt,
                 )
-                active_codex_session_id = (
-                    extract_codex_session_id(repair_output) or active_codex_session_id
-                )
-                self.last_codex_session_id = active_codex_session_id
                 return parse_agent_turn_response(repair_output)
             except (
                 CodexAgentProviderError,
@@ -149,37 +135,6 @@ class CodexAgentRunner:
         except CodexAgentProviderError as error:
             return ErrorTurnResponse(kind="error", error=error.error)
 
-    def _build_agent_command(
-        self,
-        binary,
-        codex_session_id: str | None,
-        *,
-        model: str | None,
-        sandbox: str,
-        output_schema_path,
-        config_overrides: dict[str, str],
-    ) -> list[str]:
-        if codex_session_id:
-            return build_codex_exec_resume_command(
-                binary,
-                codex_session_id,
-                "-",
-                model=model,
-                sandbox=sandbox,
-                output_schema_path=output_schema_path,
-                config_overrides=config_overrides,
-                json_output=True,
-            )
-        return build_codex_exec_command(
-            binary,
-            "-",
-            model=model,
-            sandbox=sandbox,
-            output_schema_path=output_schema_path,
-            config_overrides=config_overrides,
-            json_output=True,
-        )
-
 
 def codex_config_overrides(
     settings: Settings,
@@ -199,98 +154,9 @@ def codex_config_overrides(
 
 
 def parse_agent_turn_response(raw_output: str) -> AgentTurnResponse:
-    payload = _extract_agent_payload(raw_output)
+    payload = _extract_json_object(raw_output)
     payload = coerce_agent_turn_payload(payload)
     return AgentTurnAdapter.validate_python(payload)
-
-
-def extract_codex_session_id(raw_output: str) -> str | None:
-    for event in _parse_json_lines(raw_output):
-        if not isinstance(event, dict):
-            continue
-        for value in (
-            _nested_value(event, ("payload", "id")),
-            _nested_value(event, ("payload", "session_id")),
-            _nested_value(event, ("payload", "sessionId")),
-            event.get("session_id"),
-            event.get("sessionId"),
-        ):
-            session_id = _string_value(value)
-            if session_id:
-                return session_id
-    return None
-
-
-def _extract_agent_payload(raw_output: str) -> object:
-    final_message = _extract_final_agent_message(_parse_json_lines(raw_output))
-    if final_message is not None:
-        return _extract_json_object(final_message)
-    return _extract_json_object(raw_output)
-
-
-def _extract_final_agent_message(events: list[object]) -> str | None:
-    final_messages: list[str] = []
-    for event in events:
-        if not isinstance(event, dict):
-            continue
-        message = _event_agent_message(event)
-        if message:
-            final_messages.append(message)
-    return final_messages[-1] if final_messages else None
-
-
-def _event_agent_message(event: dict[str, object]) -> str | None:
-    event_type = _string_value(event.get("type"))
-    payload = event.get("payload")
-    payload = payload if isinstance(payload, dict) else {}
-
-    if event_type == "event_msg" and _string_value(payload.get("type")) == "agent_message":
-        return _first_string(payload, ("message", "content", "text", "last_agent_message"))
-    if event_type == "task_complete":
-        return _first_string(payload, ("last_agent_message", "message"))
-    if event_type == "response_item":
-        return _response_item_text(payload)
-    if event_type in {"agent_message", "message"}:
-        return _first_string(event, ("message", "content", "text"))
-    return None
-
-
-def _response_item_text(payload: dict[str, object]) -> str | None:
-    if _string_value(payload.get("type")) != "message":
-        return None
-    if _string_value(payload.get("role")) not in {None, "assistant"}:
-        return None
-    content = payload.get("content")
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        pieces: list[str] = []
-        for item in content:
-            if isinstance(item, dict):
-                text = _first_string(item, ("text", "output_text", "content"))
-                if text:
-                    pieces.append(text)
-            else:
-                text = _string_value(item)
-                if text:
-                    pieces.append(text)
-        if pieces:
-            return "\n".join(pieces)
-    return None
-
-
-def _parse_json_lines(raw_output: str) -> list[object]:
-    lines = [line.strip() for line in raw_output.splitlines() if line.strip()]
-    if not lines:
-        return []
-
-    events: list[object] = []
-    for line in lines:
-        try:
-            events.append(json.loads(line))
-        except json.JSONDecodeError:
-            return []
-    return events
 
 
 def coerce_agent_turn_payload(payload: object) -> object:
@@ -602,15 +468,6 @@ def _get_value(payload: dict[str, object], keys: tuple[str, ...]) -> object:
         if _normalized_key(key) in wanted:
             return value
     return None
-
-
-def _nested_value(payload: dict[str, object], keys: tuple[str, ...]) -> object:
-    current: object = payload
-    for key in keys:
-        if not isinstance(current, dict):
-            return None
-        current = _get_value(current, (key,))
-    return current
 
 
 def _first_string(payload: dict[str, object], keys: tuple[str, ...]) -> str | None:

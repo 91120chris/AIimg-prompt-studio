@@ -18,7 +18,6 @@ def test_database_includes_required_tables(tmp_path) -> None:
     assert {
         "sessions",
         "agent_turns",
-        "codex_conversations",
         "questionnaires",
         "questionnaire_answers",
         "prompts",

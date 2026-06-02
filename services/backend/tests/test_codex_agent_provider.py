@@ -43,7 +43,6 @@ def test_codex_agent_runner_repairs_invalid_json_once(monkeypatch) -> None:
         assert command.index("--config") < command.index("exec")
         assert 'model_reasoning_effort="high"' in command
         assert command[command.index("--sandbox") + 1] == "read-only"
-        assert "--json" in command[command.index("exec") :]
         assert command[-1] == "-"
     assert input_texts[0] == "請回覆 JSON。"
     assert input_texts[1] is not None
@@ -155,48 +154,3 @@ def test_parse_agent_turn_response_normalizes_optimized_prompt_alias() -> None:
     assert response.message == "Done."
     assert response.optimized_prompt == "cinematic portrait, soft rim light"
     assert response.prompt_version_title == "Cinematic portrait"
-
-
-def test_parse_agent_turn_response_reads_codex_jsonl_events() -> None:
-    raw_output = "\n".join(
-        [
-            '{"type":"session_meta","payload":{"id":"019e8426-42bc-7122-bce0-608dc8f5bb00"}}',
-            '{"type":"event_msg","payload":{"type":"agent_message","message":"{\\"kind\\":\\"message\\",\\"message\\":\\"ok\\",\\"warnings\\":[]}"}}',
-        ]
-    )
-
-    response = codex_agent_provider.parse_agent_turn_response(raw_output)
-
-    assert response.kind == "message"
-    assert response.message == "ok"
-    assert (
-        codex_agent_provider.extract_codex_session_id(raw_output)
-        == "019e8426-42bc-7122-bce0-608dc8f5bb00"
-    )
-
-
-def test_codex_agent_runner_resumes_existing_session(monkeypatch) -> None:
-    monkeypatch.setattr(codex_agent_provider, "resolve_codex_binary", lambda _: fake_binary())
-
-    def fake_executor(command: list[str], timeout_seconds: int, input_text: str | None) -> str:
-        assert command[command.index("exec") + 1] == "resume"
-        assert "019e8426-42bc-7122-bce0-608dc8f5bb00" in command
-        assert "--json" in command
-        assert input_text == "continue"
-        return "\n".join(
-            [
-                '{"type":"session_meta","payload":{"id":"019e8426-42bc-7122-bce0-608dc8f5bb00"}}',
-                '{"type":"event_msg","payload":{"type":"agent_message","message":"{\\"kind\\":\\"message\\",\\"message\\":\\"resumed\\",\\"warnings\\":[]}"}}',
-            ]
-        )
-
-    runner = CodexAgentRunner(Settings(_env_file=None), executor=fake_executor)
-
-    response = runner.run(
-        "continue",
-        codex_session_id="019e8426-42bc-7122-bce0-608dc8f5bb00",
-    )
-
-    assert response.kind == "message"
-    assert response.message == "resumed"
-    assert runner.last_codex_session_id == "019e8426-42bc-7122-bce0-608dc8f5bb00"

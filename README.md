@@ -14,7 +14,7 @@ cd services/backend
 cp .env.example .env
 # Edit .env and set HF_TOKEN only if you want future Hugging Face downloads.
 uv sync
-uv run uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+uv run uvicorn app.main:app --reload --host 127.0.0.1 --port 17321
 ```
 
 Run tests:

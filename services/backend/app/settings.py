@@ -63,7 +63,7 @@ class Settings(BaseSettings):
     app_env: str = "development"
 
     backend_host: str = "127.0.0.1"
-    backend_port: int = 8000
+    backend_port: int = 17321
     storage_root: str = "storage"
     database_url: str | None = None
     load_persisted_settings: bool = False
@@ -101,7 +101,7 @@ class Settings(BaseSettings):
     flux_model_revision: str | None = None
     flux_model_local_dir: str = "local_models/huggingface/flux2-klein-9b-fp8"
 
-    frontend_api_base_url: str = "http://127.0.0.1:8000"
+    frontend_api_base_url: str = "http://127.0.0.1:17321"
 
     @field_validator(
         "cors_allow_origins",

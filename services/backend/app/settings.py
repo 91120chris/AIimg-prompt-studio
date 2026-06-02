@@ -97,6 +97,10 @@ class Settings(BaseSettings):
     hf_home: str | None = None
     hf_hub_cache: str | None = None
 
+    flux_model_repo_id: str = "black-forest-labs/FLUX.2-klein-9b-fp8"
+    flux_model_revision: str | None = None
+    flux_model_local_dir: str = "local_models/huggingface/flux2-klein-9b-fp8"
+
     frontend_api_base_url: str = "http://127.0.0.1:8000"
 
     @field_validator(
@@ -164,6 +168,7 @@ class Settings(BaseSettings):
         "hf_token",
         "hf_home",
         "hf_hub_cache",
+        "flux_model_revision",
         "codex_default_verbosity",
         "ollama_selected_model",
         mode="before",

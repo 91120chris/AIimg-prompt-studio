@@ -1,4 +1,5 @@
 import json
+import re
 from typing import TypeAlias
 
 from fastapi import APIRouter, HTTPException, Request
@@ -6,7 +7,13 @@ from pydantic import TypeAdapter
 from sqlmodel import select
 
 from app.core.agent_fallbacks import fallback_text_questionnaire
-from app.core.file_store import generated_image_response
+from app.core.file_store import generated_image_response, reference_image_response
+from app.core.registry_prompt_compiler import build_registry_proposal_prompt
+from app.core.registry_proposals import (
+    registry_proposal_response,
+    serialize_validation,
+    validate_registry_proposal,
+)
 from app.core.prompt_compiler import (
     build_feedback_questionnaire_prompt,
     build_feedback_refinement_prompt,
@@ -27,6 +34,8 @@ from app.db.models import (
     PromptVersionRecord,
     QuestionnaireAnswerRecord,
     QuestionnaireRecord,
+    ReferenceImageRecord,
+    RegistryPatchProposalRecord,
     SessionRecord,
     SkillVersionRecord,
     TemplateVersionRecord,
@@ -37,15 +46,18 @@ from app.providers.ollama.ollama_agent_provider import OllamaAgentRunner
 from app.schemas.agent import (
     AgentFeedbackQuestionnaireRequest,
     AgentQuestionnaireSubmitRequest,
+    AgentRegistryProposalRequest,
     AgentRefineRequest,
     AgentTurnRequest,
     AgentTurnResponse,
     ErrorTurnResponse,
+    MessageTurnResponse,
     OptimizedPromptTurnResponse,
     QuestionnaireTurnResponse,
 )
 from app.schemas.errors import StructuredError
 from app.schemas.questionnaire import Questionnaire
+from app.schemas.registry import RegistryPatchProposalResponse
 from app.settings import Settings
 
 router = APIRouter(prefix="/agent", tags=["agent"])
@@ -55,6 +67,7 @@ AgentRequestPayload: TypeAlias = (
     | AgentQuestionnaireSubmitRequest
     | AgentFeedbackQuestionnaireRequest
     | AgentRefineRequest
+    | AgentRegistryProposalRequest
 )
 
 
@@ -64,6 +77,10 @@ def _engine(request: Request):
 
 def _json(value: object) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True)
+
+
+def _current_prompt_version_key(session_id: str) -> str:
+    return f"current_prompt_version:{session_id}"
 
 
 def _context_text(value: str, *, include: bool, label: str) -> str:
@@ -223,7 +240,14 @@ def _run_questionnaire_agent(
     return response
 
 
-def _store_agent_turn(db, session_id: str, response: AgentTurnResponse) -> None:
+def _store_agent_turn(
+    db,
+    session_id: str,
+    response: AgentTurnResponse,
+    *,
+    prompt_source: str = "optimized_prompt",
+    metadata: dict[str, object] | None = None,
+) -> None:
     response_payload = AgentTurnAdapter.dump_python(response, mode="json")
     db.add(
         AgentTurnRecord(
@@ -241,11 +265,21 @@ def _store_agent_turn(db, session_id: str, response: AgentTurnResponse) -> None:
             )
         )
     if isinstance(response, OptimizedPromptTurnResponse):
+        prompt_version_id = new_id("promptv")
         db.add(
             PromptVersionRecord(
-                prompt_version_id=new_id("promptv"),
+                prompt_version_id=prompt_version_id,
                 session_id=session_id,
                 prompt_text=response.optimized_prompt,
+                title=response.prompt_version_title,
+                source=prompt_source,
+                metadata_json=_json(metadata or {}),
+            )
+        )
+        db.merge(
+            AppSettingRecord(
+                key=_current_prompt_version_key(session_id),
+                value=prompt_version_id,
             )
         )
 
@@ -282,6 +316,12 @@ def _get_latest_prompt_text(db, session_id: str) -> str:
 
 
 def _get_latest_optimized_prompt_text(db, session_id: str) -> str:
+    current_setting = db.get(AppSettingRecord, _current_prompt_version_key(session_id))
+    if current_setting is not None and current_setting.value.strip():
+        current_record = db.get(PromptVersionRecord, current_setting.value)
+        if current_record is not None and current_record.session_id == session_id:
+            return current_record.prompt_text
+
     prompt_version = db.exec(
         select(PromptVersionRecord)
         .where(PromptVersionRecord.session_id == session_id)
@@ -338,6 +378,219 @@ def _get_generated_images(db, session_id: str) -> list[GeneratedImageRecord]:
             ),
         )
     return list(images)
+
+
+def _get_reference_images(db, session_id: str) -> list[ReferenceImageRecord]:
+    return list(
+        db.exec(
+            select(ReferenceImageRecord)
+            .where(ReferenceImageRecord.session_id == session_id)
+            .order_by(ReferenceImageRecord.slot)
+        ).all()
+    )
+
+
+def _current_prompt_version_record(
+    db,
+    session_id: str,
+    prompt_version_id: str | None = None,
+) -> PromptVersionRecord | None:
+    if prompt_version_id:
+        record = db.get(PromptVersionRecord, prompt_version_id)
+        if record is None or record.session_id != session_id:
+            raise _structured_http_error(
+                404,
+                StructuredError(
+                    code="prompt_version_not_found",
+                    message="Prompt version not found.",
+                    suggestion="Choose a prompt version from the current session.",
+                ),
+            )
+        return record
+
+    current_setting = db.get(AppSettingRecord, _current_prompt_version_key(session_id))
+    if current_setting is not None and current_setting.value.strip():
+        record = db.get(PromptVersionRecord, current_setting.value)
+        if record is not None and record.session_id == session_id:
+            return record
+
+    return db.exec(
+        select(PromptVersionRecord)
+        .where(PromptVersionRecord.session_id == session_id)
+        .order_by(PromptVersionRecord.created_at.desc(), PromptVersionRecord.prompt_version_id.desc())
+    ).first()
+
+
+def _latest_generation_job(db, session_id: str) -> GenerationJobRecord | None:
+    return db.exec(
+        select(GenerationJobRecord)
+        .where(GenerationJobRecord.session_id == session_id)
+        .order_by(GenerationJobRecord.created_at.desc(), GenerationJobRecord.job_id.desc())
+    ).first()
+
+
+def _questionnaire_answer_payload(
+    db,
+    session_id: str,
+    questionnaire_answer_id: str | None,
+) -> dict[str, object] | None:
+    record = None
+    if questionnaire_answer_id:
+        record = db.get(QuestionnaireAnswerRecord, questionnaire_answer_id)
+        if record is None or record.session_id != session_id:
+            raise _structured_http_error(
+                404,
+                StructuredError(
+                    code="questionnaire_answer_not_found",
+                    message="Questionnaire answer not found.",
+                    suggestion="Choose an answer from the current session.",
+                ),
+            )
+    else:
+        record = db.exec(
+            select(QuestionnaireAnswerRecord)
+            .where(QuestionnaireAnswerRecord.session_id == session_id)
+            .order_by(
+                QuestionnaireAnswerRecord.created_at.desc(),
+                QuestionnaireAnswerRecord.questionnaire_answer_id.desc(),
+            )
+        ).first()
+    if record is None:
+        return None
+    try:
+        payload = json.loads(record.payload_json)
+    except json.JSONDecodeError:
+        return {"questionnaire_answer_id": record.questionnaire_answer_id}
+    if isinstance(payload, dict):
+        return {
+            "questionnaire_answer_id": record.questionnaire_answer_id,
+            "payload": payload,
+        }
+    return {"questionnaire_answer_id": record.questionnaire_answer_id}
+
+
+def _proposal_authoring_context(
+    db,
+    payload: AgentRegistryProposalRequest,
+) -> dict[str, object]:
+    original_prompt = None
+    try:
+        original_prompt = _get_latest_prompt_text(db, payload.session_id)
+    except HTTPException:
+        original_prompt = None
+
+    prompt_version = _current_prompt_version_record(
+        db,
+        payload.session_id,
+        payload.current_prompt_version_id,
+    )
+    job = (
+        _get_succeeded_generation_job(db, payload.session_id, payload.job_id)
+        if payload.job_id
+        else _latest_generation_job(db, payload.session_id)
+    )
+    images = list(
+        db.exec(
+            select(GeneratedImageRecord)
+            .where(GeneratedImageRecord.session_id == payload.session_id)
+            .order_by(GeneratedImageRecord.created_at.desc())
+        ).all()
+    )
+    template = _latest_template(db, payload.template_id) if payload.template_id else None
+    enabled_skill_ids = [
+        record.skill_id
+        for record in _latest_skills(db)
+        if _is_skill_enabled(db, record.skill_id)
+    ]
+    return {
+        "session_id": payload.session_id,
+        "mode": payload.mode,
+        "original_prompt": original_prompt,
+        "current_prompt_version": (
+            {
+                "prompt_version_id": prompt_version.prompt_version_id,
+                "title": prompt_version.title,
+                "source": prompt_version.source,
+                "prompt_text": prompt_version.prompt_text,
+                "created_at": prompt_version.created_at,
+            }
+            if prompt_version is not None
+            else None
+        ),
+        "selected_template": (
+            {
+                "template_id": template.template_id,
+                "content": template.content,
+                "created_at": template.created_at,
+            }
+            if template is not None
+            else None
+        ),
+        "enabled_skill_ids": sorted(enabled_skill_ids),
+        "reference_images": [
+            reference_image_response(image).model_dump() for image in _get_reference_images(db, payload.session_id)
+        ],
+        "latest_generation_job": _generation_job_payload(job) if job is not None else None,
+        "generated_images": [
+            generated_image_response(image).model_dump() for image in images[:4]
+        ],
+        "feedback_answers": _questionnaire_answer_payload(
+            db,
+            payload.session_id,
+            payload.questionnaire_answer_id,
+        ),
+    }
+
+
+def _proposal_content_from_agent_response(response: AgentTurnResponse) -> tuple[str, str | None]:
+    if isinstance(response, OptimizedPromptTurnResponse):
+        return response.optimized_prompt, response.prompt_version_title or response.message or None
+    if isinstance(response, MessageTurnResponse):
+        return response.message, None
+    if isinstance(response, ErrorTurnResponse):
+        raise _structured_http_error(502, response.error)
+    raise _structured_http_error(
+        502,
+        StructuredError(
+            code="proposal_generation_failed",
+            message="Agent did not return proposal content.",
+            suggestion="Try a shorter authoring instruction or create the proposal manually.",
+        ),
+    )
+
+
+def _infer_template_id_from_content(content: str) -> str | None:
+    try:
+        payload = json.loads(content)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    value = payload.get("id")
+    return value.strip() if isinstance(value, str) and value.strip() else None
+
+
+def _infer_skill_id_from_content(content: str) -> str | None:
+    for line in content.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("#"):
+            continue
+        title = stripped.lstrip("#").strip()
+        slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
+        return slug[:72] or None
+    return None
+
+
+def _infer_proposal_target_id(
+    proposal_kind: str,
+    content: str,
+    explicit_target_id: str | None,
+) -> str | None:
+    if explicit_target_id and explicit_target_id.strip():
+        return explicit_target_id.strip()
+    if proposal_kind == "template":
+        return _infer_template_id_from_content(content)
+    return _infer_skill_id_from_content(content)
 
 
 def _generation_job_payload(job: GenerationJobRecord) -> dict[str, object]:
@@ -451,7 +704,13 @@ def answer_questionnaire(
             payload,
         )
         response = _ensure_unique_questionnaire_id(db, response)
-        _store_agent_turn(db, payload.session_id, response)
+        _store_agent_turn(
+            db,
+            payload.session_id,
+            response,
+            prompt_source="optimized_prompt",
+            metadata={"questionnaire_id": payload.questionnaire_id},
+        )
         db.commit()
         return response
 
@@ -502,7 +761,12 @@ def create_feedback_questionnaire(
             payload,
         )
         response = _ensure_unique_questionnaire_id(db, response)
-        _store_agent_turn(db, payload.session_id, response)
+        _store_agent_turn(
+            db,
+            payload.session_id,
+            response,
+            metadata={"job_id": payload.job_id},
+        )
         db.commit()
         return response
 
@@ -569,6 +833,84 @@ def refine_prompt_from_feedback(
             payload,
         )
         response = _ensure_unique_questionnaire_id(db, response)
-        _store_agent_turn(db, payload.session_id, response)
+        _store_agent_turn(
+            db,
+            payload.session_id,
+            response,
+            prompt_source="feedback_refine",
+            metadata={
+                "job_id": payload.job_id,
+                "questionnaire_id": payload.questionnaire_id,
+            },
+        )
         db.commit()
         return response
+
+
+@router.post("/registry-proposals", response_model=RegistryPatchProposalResponse)
+def create_agent_registry_proposal(
+    payload: AgentRegistryProposalRequest,
+    request: Request,
+) -> RegistryPatchProposalResponse:
+    settings = request.app.state.settings
+
+    with new_session(_engine(request)) as db:
+        if db.get(SessionRecord, payload.session_id) is None:
+            raise _structured_http_error(
+                404,
+                StructuredError(
+                    code="session_not_found",
+                    message="Session not found.",
+                    suggestion="Create or select a session before authoring a proposal.",
+                ),
+            )
+
+        registry_context = _registry_context(db, payload, mode_override=payload.mode)
+        safe_context = _proposal_authoring_context(db, payload)
+        response = _run_agent(
+            settings,
+            _with_registry_context(
+                build_registry_proposal_prompt(
+                    proposal_kind=payload.proposal_kind,
+                    change_kind=payload.change_kind,
+                    authoring_instruction=payload.authoring_instruction,
+                    context=safe_context,
+                ),
+                registry_context,
+            ),
+            payload,
+        )
+        proposed_content, response_summary = _proposal_content_from_agent_response(response)
+        target_id = _infer_proposal_target_id(
+            payload.proposal_kind,
+            proposed_content,
+            payload.target_id,
+        )
+        if not target_id:
+            target_id = f"{payload.proposal_kind}-{new_id('proposal')}"
+
+        record = RegistryPatchProposalRecord(
+            proposal_id=new_id("proposal"),
+            registry_kind=payload.proposal_kind,
+            change_kind=payload.change_kind,
+            target_id=target_id,
+            status="pending",
+            summary=response_summary or payload.authoring_instruction[:180],
+            diff_text=(
+                f"Agent proposed {payload.change_kind} "
+                f"{payload.proposal_kind} '{target_id}'."
+            ),
+            proposed_content=proposed_content,
+            source_json=_json(
+                {
+                    "request": payload.model_dump(),
+                    "context": safe_context,
+                }
+            ),
+        )
+        validation = validate_registry_proposal(record)
+        record.validation_json = serialize_validation(validation)
+        db.add(record)
+        db.commit()
+        db.refresh(record)
+        return registry_proposal_response(record)

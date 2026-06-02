@@ -1,3 +1,5 @@
+import json
+
 from fastapi import APIRouter, HTTPException, Request
 from sqlmodel import select
 
@@ -20,13 +22,22 @@ def _engine(request: Request):
 
 
 def _proposal_response(record: RegistryPatchProposalRecord) -> RegistryPatchProposalResponse:
+    validation = None
+    if record.validation_json:
+        try:
+            validation = json.loads(record.validation_json)
+        except json.JSONDecodeError:
+            validation = None
     return RegistryPatchProposalResponse(
         proposal_id=record.proposal_id,
         registry_kind="skill",
+        change_kind=record.change_kind,
         item_id=record.target_id,
         status=record.status,
+        summary=record.summary,
         diff_text=record.diff_text,
         proposed_content=record.proposed_content,
+        validation=validation,
         applied_version_id=record.applied_version_id,
         created_at=record.created_at,
     )
@@ -171,8 +182,10 @@ def create_skill_patch_proposal(
         record = RegistryPatchProposalRecord(
             proposal_id=new_id("proposal"),
             registry_kind="skill",
+            change_kind=payload.change_kind,
             target_id=target_id,
             status="pending",
+            summary=payload.summary,
             diff_text=diff_text,
             proposed_content=payload.proposed_content,
         )

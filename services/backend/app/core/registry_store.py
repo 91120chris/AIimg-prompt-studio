@@ -5,6 +5,7 @@ from sqlmodel import Session, select
 
 from app.core.session_workspace import new_id
 from app.db.models import (
+    AppSettingRecord,
     RegistryPatchProposalRecord,
     SkillVersionRecord,
     TemplateVersionRecord,
@@ -41,6 +42,7 @@ def apply_registry_patch_proposal(
         return None
 
     if record.registry_kind == "skill":
+        was_existing_skill = _skill_exists(db, record.target_id)
         version_id = new_id("skillv")
         db.add(
             SkillVersionRecord(
@@ -49,6 +51,8 @@ def apply_registry_patch_proposal(
                 content=record.proposed_content,
             )
         )
+        if record.change_kind == "create" or not was_existing_skill:
+            db.merge(AppSettingRecord(key=f"skill_enabled:{record.target_id}", value="0"))
     elif record.registry_kind == "template":
         version_id = new_id("tmplv")
         db.add(

@@ -883,6 +883,10 @@ p {
   border-bottom: 1px solid #e5ebf0;
 }
 
+.settings-section[hidden] {
+  display: none;
+}
+
 .settings-section:last-child {
   border-bottom: 0;
 }
@@ -976,6 +980,29 @@ p {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.manager-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  min-width: 0;
+}
+
+.manager-tabs button {
+  min-height: 34px;
+  border: 1px solid #cfd9e2;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #435566;
+  font-size: 12px;
+  text-transform: capitalize;
+}
+
+.manager-tabs button.is-active {
+  border-color: #1f7a5a;
+  background: #edf8f2;
+  color: #174d3c;
 }
 
 .command-button {

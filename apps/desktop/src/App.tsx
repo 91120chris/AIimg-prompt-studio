@@ -26,10 +26,13 @@ import {
   type ModelInfoResponse,
   type OllamaModelsResponse,
   type OllamaStatusResponse,
+  type PromptVersionResponse,
   type Question,
   type Questionnaire,
   type ReferenceImageResponse,
   type RegistryItemResponse,
+  type RegistryPatchProposalResponse,
+  type RegistryPatchProposalValidationResponse,
   type SafeSettingsResponse,
   type SecretStatusResponse,
   type SessionResponse,
@@ -47,9 +50,14 @@ import {
   modelInfoListResponseSchema,
   ollamaModelsResponseSchema,
   ollamaStatusResponseSchema,
+  promptVersionResponseSchema,
+  promptVersionsResponseSchema,
   referenceImageResponseSchema,
   registryItemResponseSchema,
   registryItemsResponseSchema,
+  registryPatchProposalResponseSchema,
+  registryPatchProposalValidationResponseSchema,
+  registryPatchProposalsResponseSchema,
   safeSettingsResponseSchema,
   secretStatusResponseSchema,
   sessionResponseSchema,
@@ -72,6 +80,9 @@ type LocalFluxPathField =
 type AnswerDraftValue = string | boolean | number | string[];
 type AnswerDrafts = Record<string, AnswerDraftValue>;
 type FeedbackQuestionnaireContext = { questionnaireId: string; jobId: string };
+type ManagerTab = "models" | "skills" | "templates" | "prompt" | "proposals" | "logs";
+type ProposalKind = "skill" | "template";
+type ProposalChangeKind = "create" | "update";
 type QuestionnaireAnswerRequest =
   | { kind: "text"; question_id: string; value: string }
   | { kind: "choice"; question_id: string; value: string }
@@ -214,6 +225,30 @@ function formatSessionTime(value: string): string {
   }).format(date);
 }
 
+function promptVersionLabel(version: PromptVersionResponse): string {
+  const title = version.title?.trim() || version.source.replace(/_/g, " ");
+  return `${title} / ${formatSessionTime(version.created_at)}`;
+}
+
+function proposalValidationMessage(
+  proposal: RegistryPatchProposalResponse | null,
+): string {
+  const validation = proposal?.validation as
+    | { valid?: unknown; errors?: unknown }
+    | null
+    | undefined;
+  if (!validation) {
+    return "尚未驗證";
+  }
+  if (validation.valid === true) {
+    return "驗證通過";
+  }
+  const errors = Array.isArray(validation.errors)
+    ? validation.errors.filter((item): item is string => typeof item === "string")
+    : [];
+  return errors.length > 0 ? errors.join(" ") : "驗證未通過";
+}
+
 function defaultDraftsForQuestionnaire(questionnaire: Questionnaire): AnswerDrafts {
   return Object.fromEntries(
     questionnaire.questions.map((question) => {
@@ -317,16 +352,29 @@ function App() {
   const [sessionHistory, setSessionHistory] = useState<SessionResponse[]>([]);
   const [managerMessage, setManagerMessage] = useState<string | null>(null);
   const [managerBusy, setManagerBusy] = useState(false);
+  const [managerTab, setManagerTab] = useState<ManagerTab>("models");
   const [managerModels, setManagerModels] = useState<ModelInfoResponse[]>([]);
   const [managerSkills, setManagerSkills] = useState<RegistryItemResponse[]>([]);
   const [managerTemplates, setManagerTemplates] = useState<RegistryItemResponse[]>([]);
+  const [managerPromptVersions, setManagerPromptVersions] = useState<PromptVersionResponse[]>([]);
+  const [registryProposals, setRegistryProposals] = useState<RegistryPatchProposalResponse[]>([]);
   const [managerLogs, setManagerLogs] = useState<LogResponse[]>([]);
   const [templates, setTemplates] = useState<RegistryItemResponse[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [managerSelectedTemplateId, setManagerSelectedTemplateId] = useState("");
   const [templateEditorContent, setTemplateEditorContent] = useState("");
+  const [templatePreviewSamplePrompt, setTemplatePreviewSamplePrompt] = useState("");
   const [templateValidation, setTemplateValidation] = useState<TemplateValidationResponse | null>(null);
   const [templatePreview, setTemplatePreview] = useState<TemplatePreviewResponse | null>(null);
+  const [selectedProposalId, setSelectedProposalId] = useState("");
+  const [proposalEditorContent, setProposalEditorContent] = useState("");
+  const [proposalTargetId, setProposalTargetId] = useState("");
+  const [proposalAuthoringInstruction, setProposalAuthoringInstruction] =
+    useState("把目前 prompt / feedback 整理成可重用規則");
+  const [proposalKind, setProposalKind] = useState<ProposalKind>("template");
+  const [proposalChangeKind, setProposalChangeKind] = useState<ProposalChangeKind>("create");
+  const [proposalValidation, setProposalValidation] =
+    useState<RegistryPatchProposalValidationResponse | null>(null);
   const [localFluxStatus, setLocalFluxStatus] = useState<LocalFluxStatusResponse | null>(null);
   const [localFluxDraft, setLocalFluxDraft] =
     useState<LocalFluxSettingsResponse>(fallbackLocalFluxSettings);
@@ -364,6 +412,10 @@ function App() {
   const selectedTemplate = useMemo(
     () => templates.find((template) => template.item_id === selectedTemplateId) ?? null,
     [selectedTemplateId, templates],
+  );
+  const selectedProposal = useMemo(
+    () => registryProposals.find((proposal) => proposal.proposal_id === selectedProposalId) ?? null,
+    [registryProposals, selectedProposalId],
   );
 
   useEffect(() => {
@@ -771,24 +823,50 @@ function App() {
     await refreshSessionHistory();
   }
 
+  async function refreshPromptVersions(sessionId: string | null = currentSession?.session_id ?? null) {
+    if (!sessionId) {
+      setManagerPromptVersions([]);
+      return;
+    }
+    const versions = await fetchJson(
+      `/sessions/${sessionId}/prompt-versions`,
+      promptVersionsResponseSchema,
+    );
+    setManagerPromptVersions(versions);
+  }
+
   async function refreshManagerData() {
     setManagerBusy(true);
     setManagerMessage(null);
     try {
-      const [models, skills, templates, logs] = await Promise.all([
+      const [models, skills, templates, proposals, logs, promptVersions] = await Promise.all([
         fetchJson("/models", modelInfoListResponseSchema),
         fetchJson("/skills", registryItemsResponseSchema),
         fetchJson("/templates", registryItemsResponseSchema),
+        fetchJson("/registry/patch-proposals", registryPatchProposalsResponseSchema),
         fetchJson("/logs", logsResponseSchema),
+        currentSession
+          ? fetchJson(
+              `/sessions/${currentSession.session_id}/prompt-versions`,
+              promptVersionsResponseSchema,
+            )
+          : Promise.resolve([] as PromptVersionResponse[]),
       ]);
       setManagerModels(models);
       setManagerSkills(skills);
       setManagerTemplates(templates);
       setTemplates(templates);
+      setRegistryProposals(proposals);
       setManagerLogs(logs);
+      setManagerPromptVersions(promptVersions);
       if (!managerSelectedTemplateId && templates.length > 0) {
         setManagerSelectedTemplateId(templates[0].item_id);
         setTemplateEditorContent(templates[0].content);
+      }
+      if (!selectedProposalId && proposals.length > 0) {
+        setSelectedProposalId(proposals[0].proposal_id);
+        setProposalEditorContent(proposals[0].proposed_content ?? "");
+        setProposalTargetId(proposals[0].item_id ?? "");
       }
       setManagerMessage(
         `已載入 ${models.length} models / ${skills.length} skills / ${templates.length} templates / ${logs.length} logs`,
@@ -813,6 +891,15 @@ function App() {
     setTemplateEditorContent(template.content);
     setTemplateValidation(null);
     setTemplatePreview(null);
+  }
+
+  function selectRegistryProposal(proposal: RegistryPatchProposalResponse) {
+    setSelectedProposalId(proposal.proposal_id);
+    setProposalEditorContent(proposal.proposed_content ?? "");
+    setProposalTargetId(proposal.item_id ?? "");
+    setProposalKind(proposal.registry_kind);
+    setProposalChangeKind(proposal.change_kind);
+    setProposalValidation(null);
   }
 
   function startNewTemplate() {
@@ -877,7 +964,11 @@ function App() {
       const response = await fetch(`${backendBaseUrl}/templates/validate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: templateEditorContent }),
+        body: JSON.stringify({
+          content: templateEditorContent,
+          sample_prompt: templatePreviewSamplePrompt || null,
+          mode: workflowMode,
+        }),
       });
       if (!response.ok) {
         throw new Error(await readErrorMessage(response));
@@ -899,7 +990,11 @@ function App() {
       const response = await fetch(`${backendBaseUrl}/templates/preview`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: templateEditorContent }),
+        body: JSON.stringify({
+          content: templateEditorContent,
+          sample_prompt: templatePreviewSamplePrompt || null,
+          mode: workflowMode,
+        }),
       });
       if (!response.ok) {
         throw new Error(await readErrorMessage(response));
@@ -971,6 +1066,219 @@ function App() {
       setManagerMessage(error instanceof Error ? error.message : "Template 複製失敗");
     } finally {
       setManagerBusy(false);
+    }
+  }
+
+  async function setCurrentPromptVersion(version: PromptVersionResponse) {
+    if (!currentSession) {
+      setManagerMessage("請先選擇或建立 session");
+      return;
+    }
+    setManagerBusy(true);
+    setManagerMessage(null);
+    try {
+      const response = await fetch(
+        `${backendBaseUrl}/sessions/${currentSession.session_id}/current-prompt-version`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt_version_id: version.prompt_version_id }),
+        },
+      );
+      if (!response.ok) {
+        throw new Error(await readErrorMessage(response));
+      }
+      const updated = promptVersionResponseSchema.parse(await response.json());
+      setOptimizedPrompt(updated.prompt_text);
+      await refreshPromptVersions(currentSession.session_id);
+      setManagerMessage(`已切換 prompt version：${updated.title ?? updated.prompt_version_id}`);
+    } catch (error) {
+      setManagerMessage(error instanceof Error ? error.message : "Prompt version 切換失敗");
+    } finally {
+      setManagerBusy(false);
+    }
+  }
+
+  async function refreshRegistryProposals() {
+    const proposals = await fetchJson(
+      "/registry/patch-proposals",
+      registryPatchProposalsResponseSchema,
+    );
+    setRegistryProposals(proposals);
+    if (selectedProposalId && !proposals.some((item) => item.proposal_id === selectedProposalId)) {
+      setSelectedProposalId("");
+      setProposalEditorContent("");
+      setProposalTargetId("");
+    }
+  }
+
+  async function saveRegistryProposalDraft(): Promise<boolean> {
+    if (!selectedProposal) {
+      setManagerMessage("請先選擇 proposal");
+      return false;
+    }
+    setManagerBusy(true);
+    setManagerMessage(null);
+    try {
+      const response = await fetch(`${backendBaseUrl}/registry/patch-proposals/${selectedProposal.proposal_id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          proposed_content: proposalEditorContent,
+          item_id: proposalTargetId || null,
+          summary: selectedProposal.summary ?? "",
+        }),
+      });
+      if (!response.ok) {
+        throw new Error(await readErrorMessage(response));
+      }
+      const updated = registryPatchProposalResponseSchema.parse(await response.json());
+      setRegistryProposals((current) =>
+        current.map((item) => (item.proposal_id === updated.proposal_id ? updated : item)),
+      );
+      selectRegistryProposal(updated);
+      setManagerMessage("Proposal draft 已儲存");
+      return true;
+    } catch (error) {
+      setManagerMessage(error instanceof Error ? error.message : "Proposal draft 儲存失敗");
+      return false;
+    } finally {
+      setManagerBusy(false);
+    }
+  }
+
+  async function validateSelectedProposal() {
+    if (!selectedProposal) {
+      setManagerMessage("請先選擇 proposal");
+      return;
+    }
+    setManagerBusy(true);
+    setManagerMessage(null);
+    try {
+      if (!(await saveRegistryProposalDraft())) {
+        return;
+      }
+      const response = await fetch(
+        `${backendBaseUrl}/registry/patch-proposals/${selectedProposal.proposal_id}/validate`,
+        { method: "POST" },
+      );
+      if (!response.ok) {
+        throw new Error(await readErrorMessage(response));
+      }
+      const validation = registryPatchProposalValidationResponseSchema.parse(await response.json());
+      setProposalValidation(validation);
+      await refreshRegistryProposals();
+      setManagerMessage(validation.valid ? "Proposal 驗證通過" : validation.errors.join(" "));
+    } catch (error) {
+      setManagerMessage(error instanceof Error ? error.message : "Proposal 驗證失敗");
+    } finally {
+      setManagerBusy(false);
+    }
+  }
+
+  async function approveSelectedProposal() {
+    if (!selectedProposal) {
+      setManagerMessage("請先選擇 proposal");
+      return;
+    }
+    setManagerBusy(true);
+    setManagerMessage(null);
+    try {
+      if (!(await saveRegistryProposalDraft())) {
+        return;
+      }
+      const response = await fetch(
+        `${backendBaseUrl}/registry/patch-proposals/${selectedProposal.proposal_id}/approve`,
+        { method: "POST" },
+      );
+      if (!response.ok) {
+        throw new Error(await readErrorMessage(response));
+      }
+      const updated = registryPatchProposalResponseSchema.parse(await response.json());
+      setRegistryProposals((current) =>
+        current.map((item) => (item.proposal_id === updated.proposal_id ? updated : item)),
+      );
+      selectRegistryProposal(updated);
+      await refreshManagerData();
+      setManagerMessage("Proposal 已 approve，registry 已建立新版本");
+    } catch (error) {
+      setManagerMessage(error instanceof Error ? error.message : "Proposal approve 失敗");
+    } finally {
+      setManagerBusy(false);
+    }
+  }
+
+  async function rejectSelectedProposal() {
+    if (!selectedProposal) {
+      setManagerMessage("請先選擇 proposal");
+      return;
+    }
+    setManagerBusy(true);
+    setManagerMessage(null);
+    try {
+      const response = await fetch(
+        `${backendBaseUrl}/registry/patch-proposals/${selectedProposal.proposal_id}/reject`,
+        { method: "POST" },
+      );
+      if (!response.ok) {
+        throw new Error(await readErrorMessage(response));
+      }
+      const updated = registryPatchProposalResponseSchema.parse(await response.json());
+      setRegistryProposals((current) =>
+        current.map((item) => (item.proposal_id === updated.proposal_id ? updated : item)),
+      );
+      selectRegistryProposal(updated);
+      setManagerMessage("Proposal 已 reject");
+    } catch (error) {
+      setManagerMessage(error instanceof Error ? error.message : "Proposal reject 失敗");
+    } finally {
+      setManagerBusy(false);
+    }
+  }
+
+  async function createAgentRegistryProposal(
+    kind: ProposalKind = proposalKind,
+    instruction = proposalAuthoringInstruction,
+    changeKind: ProposalChangeKind = proposalChangeKind,
+  ) {
+    const session = await ensureSession();
+    setManagerBusy(true);
+    setAgentMessage(`${activeAgentName} 正在建立 ${kind} proposal...`);
+    setManagerMessage(null);
+    try {
+      const currentPromptVersion =
+        managerPromptVersions.find((version) => version.is_current) ?? managerPromptVersions[0];
+      const response = await fetch(`${backendBaseUrl}/agent/registry-proposals`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          session_id: session.session_id,
+          proposal_kind: kind,
+          change_kind: changeKind,
+          authoring_instruction: instruction,
+          mode: workflowMode,
+          target_id: proposalTargetId || null,
+          current_prompt_version_id: currentPromptVersion?.prompt_version_id ?? null,
+          job_id: generationJob?.job_id ?? null,
+          template_id: selectedTemplateId || null,
+          ...agentProviderPayload(),
+        }),
+      });
+      if (!response.ok) {
+        throw new Error(await readErrorMessage(response));
+      }
+      const proposal = registryPatchProposalResponseSchema.parse(await response.json());
+      setRegistryProposals((current) => [proposal, ...current.filter((item) => item.proposal_id !== proposal.proposal_id)]);
+      selectRegistryProposal(proposal);
+      setManagerTab("proposals");
+      setManagerOpen(true);
+      setManagerMessage("Agent proposal 已建立，請在 Proposals tab 檢查後 approve 或 reject");
+    } catch (error) {
+      setManagerMessage(error instanceof Error ? error.message : "Agent proposal 建立失敗");
+      setErrorMessage(error instanceof Error ? error.message : "Agent proposal 建立失敗");
+    } finally {
+      setManagerBusy(false);
+      setAgentMessage(null);
     }
   }
 
@@ -1137,6 +1445,7 @@ function App() {
       setFeedbackQuestionnaireContext(null);
       setAgentTurn(null);
       setAnswerDrafts({});
+      await refreshPromptVersions(session.session_id);
       setAgentMessage(`已載入工作階段 ${session.session_id}`);
       setHistoryOpen(false);
     } catch (error) {
@@ -1214,6 +1523,9 @@ function App() {
       setOptimizedPrompt(turn.optimized_prompt);
       setAgentMessage(turn.message);
       setFeedbackQuestionnaireContext(null);
+      if (currentSession) {
+        void refreshPromptVersions(currentSession.session_id);
+      }
       return;
     }
     if (turn.kind === "error") {
@@ -2071,8 +2383,26 @@ function App() {
           <div className="workflow-controls" aria-label="Prompt workflow controls">
             <label>
               Prompt 版本
-              <select defaultValue="draft">
-                <option value="draft">草稿 v0</option>
+              <select
+                value={
+                  managerPromptVersions.find((version) => version.is_current)?.prompt_version_id ??
+                  ""
+                }
+                onChange={(event) => {
+                  const version = managerPromptVersions.find(
+                    (item) => item.prompt_version_id === event.target.value,
+                  );
+                  if (version) {
+                    void setCurrentPromptVersion(version);
+                  }
+                }}
+              >
+                <option value="">目前草稿</option>
+                {managerPromptVersions.map((version) => (
+                  <option key={version.prompt_version_id} value={version.prompt_version_id}>
+                    {promptVersionLabel(version)}
+                  </option>
+                ))}
               </select>
             </label>
             <label>
@@ -2178,6 +2508,36 @@ function App() {
                 }}
               >
                 回饋 / 修正 Prompt
+              </button>
+              <button
+                type="button"
+                disabled={managerBusy || agentBusy || !currentSession || !optimizedPrompt.trim()}
+                onClick={() => {
+                  setProposalKind("template");
+                  setProposalChangeKind("create");
+                  void createAgentRegistryProposal(
+                    "template",
+                    "把目前 prompt、圖片結果與 feedback 經驗整理成可重用 template proposal",
+                    "create",
+                  );
+                }}
+              >
+                轉成 Template 提案
+              </button>
+              <button
+                type="button"
+                disabled={managerBusy || agentBusy || !currentSession || !optimizedPrompt.trim()}
+                onClick={() => {
+                  setProposalKind("skill");
+                  setProposalChangeKind("create");
+                  void createAgentRegistryProposal(
+                    "skill",
+                    "把這次成功或失敗經驗整理成可重用 skill 規則 proposal",
+                    "create",
+                  );
+                }}
+              >
+                轉成 Skill 提案
               </button>
               {generationJob && generationJob.status === "queued" ? (
                 <button
@@ -2374,7 +2734,22 @@ function App() {
                 {managerBusy ? "載入中" : "重新整理"}
               </button>
 
-              <section className="settings-section">
+              <nav className="manager-tabs" aria-label="Manager tabs">
+                {(["models", "skills", "templates", "prompt", "proposals", "logs"] as ManagerTab[]).map(
+                  (tab) => (
+                    <button
+                      key={tab}
+                      type="button"
+                      className={managerTab === tab ? "is-active" : ""}
+                      onClick={() => setManagerTab(tab)}
+                    >
+                      {tab}
+                    </button>
+                  ),
+                )}
+              </nav>
+
+              <section className="settings-section" hidden={managerTab !== "models"}>
                 <h3>Models</h3>
                 <p>{managerBusy ? "正在載入模型狀態..." : `${managerModels.length} 個模型狀態`}</p>
                 <div className="history-list" aria-label="模型狀態清單">
@@ -2394,7 +2769,7 @@ function App() {
                   )}
                 </div>
               </section>
-              <section className="settings-section">
+              <section className="settings-section" hidden={managerTab !== "skills"}>
                 <h3>Skills</h3>
                 <p>{managerBusy ? "正在載入技能..." : `${managerSkills.length} 個技能`}</p>
                 <div className="history-list" aria-label="技能清單">
@@ -2422,7 +2797,7 @@ function App() {
                   )}
                 </div>
               </section>
-              <section className="settings-section">
+              <section className="settings-section" hidden={managerTab !== "templates"}>
                 <h3>Templates</h3>
                 <p>{managerBusy ? "正在載入模板..." : `${managerTemplates.length} 個模板`}</p>
                 <div className="manager-actions" aria-label="Template 操作">
@@ -2513,6 +2888,14 @@ function App() {
                     }}
                   />
                 </label>
+                <label>
+                  Sample prompt
+                  <input
+                    value={templatePreviewSamplePrompt}
+                    placeholder="用於 preview 的測試 prompt，不會呼叫 LLM"
+                    onChange={(event) => setTemplatePreviewSamplePrompt(event.target.value)}
+                  />
+                </label>
                 {templateValidation ? (
                   <p className="generation-note">
                     {templateValidation.valid
@@ -2534,7 +2917,188 @@ function App() {
                   </div>
                 ) : null}
               </section>
-              <section className="settings-section">
+              <section className="settings-section" hidden={managerTab !== "prompt"}>
+                <h3>Prompt</h3>
+                <p>
+                  {currentSession
+                    ? `${managerPromptVersions.length} 個 prompt versions`
+                    : "尚未選擇 session"}
+                </p>
+                <div className="history-list" aria-label="Prompt versions">
+                  {managerPromptVersions.length === 0 ? (
+                    <p>目前沒有已儲存的 optimized prompt version。</p>
+                  ) : (
+                    managerPromptVersions.map((version) => (
+                      <button
+                        className={`history-session${version.is_current ? " is-active" : ""}`}
+                        key={version.prompt_version_id}
+                        type="button"
+                        disabled={managerBusy}
+                        onClick={() => {
+                          void setCurrentPromptVersion(version);
+                        }}
+                      >
+                        <strong>{version.title ?? version.prompt_version_id}</strong>
+                        <span>
+                          {version.source} / {formatSessionTime(version.created_at)}
+                        </span>
+                        <small>{version.prompt_text}</small>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </section>
+
+              <section className="settings-section" hidden={managerTab !== "proposals"}>
+                <h3>Proposals</h3>
+                <p>{registryProposals.length} 個待審或已處理 proposal</p>
+                <div className="manager-actions" aria-label="建立 proposal">
+                  <select
+                    value={proposalKind}
+                    onChange={(event) => setProposalKind(event.target.value as ProposalKind)}
+                    aria-label="Proposal kind"
+                  >
+                    <option value="template">Template</option>
+                    <option value="skill">Skill</option>
+                  </select>
+                  <select
+                    value={proposalChangeKind}
+                    onChange={(event) =>
+                      setProposalChangeKind(event.target.value as ProposalChangeKind)
+                    }
+                    aria-label="Change kind"
+                  >
+                    <option value="create">Create</option>
+                    <option value="update">Update</option>
+                  </select>
+                  <button
+                    className="command-button command-button-primary"
+                    type="button"
+                    disabled={managerBusy || agentBusy || !proposalAuthoringInstruction.trim()}
+                    onClick={() => {
+                      void createAgentRegistryProposal();
+                    }}
+                  >
+                    <Plus size={16} aria-hidden="true" />
+                    Agent 建立提案
+                  </button>
+                </div>
+                <label>
+                  Authoring instruction
+                  <textarea
+                    rows={3}
+                    value={proposalAuthoringInstruction}
+                    onChange={(event) => setProposalAuthoringInstruction(event.target.value)}
+                  />
+                </label>
+                <div className="history-list" aria-label="Registry proposals">
+                  {registryProposals.length === 0 ? (
+                    <p>目前沒有 proposal。</p>
+                  ) : (
+                    registryProposals.map((proposal) => (
+                      <button
+                        className={`history-session${
+                          selectedProposalId === proposal.proposal_id ? " is-active" : ""
+                        }`}
+                        key={proposal.proposal_id}
+                        type="button"
+                        onClick={() => selectRegistryProposal(proposal)}
+                      >
+                        <strong>
+                          {proposal.registry_kind} / {proposal.change_kind}
+                        </strong>
+                        <span>
+                          {proposal.status} / {proposal.item_id ?? "no target"}
+                        </span>
+                        <small>{proposal.summary ?? proposal.diff_text}</small>
+                      </button>
+                    ))
+                  )}
+                </div>
+                {selectedProposal ? (
+                  <>
+                    <div className="manager-actions" aria-label="Proposal 審核">
+                      <button
+                        className="command-button"
+                        type="button"
+                        disabled={managerBusy || selectedProposal.status !== "pending"}
+                        onClick={() => {
+                          void saveRegistryProposalDraft();
+                        }}
+                      >
+                        <Save size={16} aria-hidden="true" />
+                        儲存草稿
+                      </button>
+                      <button
+                        className="command-button"
+                        type="button"
+                        disabled={managerBusy || selectedProposal.status !== "pending"}
+                        onClick={() => {
+                          void validateSelectedProposal();
+                        }}
+                      >
+                        <RefreshCcw size={16} aria-hidden="true" />
+                        驗證
+                      </button>
+                      <button
+                        className="command-button command-button-primary"
+                        type="button"
+                        disabled={managerBusy || selectedProposal.status !== "pending"}
+                        onClick={() => {
+                          void approveSelectedProposal();
+                        }}
+                      >
+                        <Save size={16} aria-hidden="true" />
+                        Approve
+                      </button>
+                      <button
+                        className="command-button"
+                        type="button"
+                        disabled={managerBusy || selectedProposal.status !== "pending"}
+                        onClick={() => {
+                          void rejectSelectedProposal();
+                        }}
+                      >
+                        <X size={16} aria-hidden="true" />
+                        Reject
+                      </button>
+                    </div>
+                    <label>
+                      Target ID
+                      <input
+                        value={proposalTargetId}
+                        disabled={selectedProposal.status !== "pending"}
+                        onChange={(event) => setProposalTargetId(event.target.value)}
+                      />
+                    </label>
+                    <label>
+                      Proposed content
+                      <textarea
+                        rows={14}
+                        value={proposalEditorContent}
+                        disabled={selectedProposal.status !== "pending"}
+                        onChange={(event) => {
+                          setProposalEditorContent(event.target.value);
+                          setProposalValidation(null);
+                        }}
+                      />
+                    </label>
+                    <p className="generation-note">
+                      {proposalValidation
+                        ? proposalValidation.valid
+                          ? "Proposal 驗證通過"
+                          : proposalValidation.errors.join(" ")
+                        : proposalValidationMessage(selectedProposal)}
+                    </p>
+                    <div className="history-session">
+                      <strong>Diff preview</strong>
+                      <small>{selectedProposal.diff_text}</small>
+                    </div>
+                  </>
+                ) : null}
+              </section>
+
+              <section className="settings-section" hidden={managerTab !== "logs"}>
                 <h3>Logs</h3>
                 <p>{managerBusy ? "正在載入記錄..." : `${managerLogs.length} 筆近期記錄`}</p>
                 <div className="history-list" aria-label="近期記錄清單">

@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 
-from app.db.models import SkillVersionRecord, TemplateVersionRecord
+from app.db.models import AppSettingRecord, SkillVersionRecord, TemplateVersionRecord
 from app.db.session import new_session
 from app.main import create_app
 from app.settings import Settings
@@ -313,3 +313,104 @@ def test_template_create_rejects_duplicate_and_invalid_content(tmp_path) -> None
     assert duplicate.json()["detail"]["code"] == "template_id_exists"
     assert invalid.status_code == 200
     assert invalid.json()["valid"] is False
+
+
+def test_unified_registry_proposal_validation_approval_and_rejection(tmp_path) -> None:
+    app, client = make_client(tmp_path)
+    template_content = """
+    {
+      "id": "proposal-template",
+      "name": "Proposal Template",
+      "applies_to": ["t2i"],
+      "description": "Proposal test.",
+      "questions": [{"id": "subject", "type": "text", "label": "Subject"}],
+      "prompt_structure": {}
+    }
+    """
+    create_response = client.post(
+        "/templates/patch-proposals",
+        json={
+            "item_id": "proposal-template",
+            "change_kind": "create",
+            "summary": "Add proposal template",
+            "diff_text": "Agent proposed create template.",
+            "proposed_content": template_content,
+        },
+    )
+    proposal_id = create_response.json()["proposal_id"]
+    list_response = client.get("/registry/patch-proposals")
+    validate_response = client.post(f"/registry/patch-proposals/{proposal_id}/validate")
+    approve_response = client.post(f"/registry/patch-proposals/{proposal_id}/approve")
+    template_response = client.get("/templates/proposal-template")
+
+    assert create_response.status_code == 200
+    assert create_response.json()["change_kind"] == "create"
+    assert list_response.status_code == 200
+    assert any(item["proposal_id"] == proposal_id for item in list_response.json())
+    assert validate_response.status_code == 200
+    assert validate_response.json()["valid"] is True
+    assert approve_response.status_code == 200
+    assert approve_response.json()["status"] == "approved"
+    assert template_response.status_code == 200
+
+    reject_create = client.post(
+        "/skills/patch-proposals",
+        json={"item_id": "reject-me", "diff_text": "Reject this proposal."},
+    )
+    reject_response = client.post(
+        f"/registry/patch-proposals/{reject_create.json()['proposal_id']}/reject"
+    )
+
+    assert reject_create.status_code == 200
+    assert reject_response.status_code == 200
+    assert reject_response.json()["status"] == "rejected"
+
+    with new_session(app.state.engine) as db:
+        record = db.get(TemplateVersionRecord, approve_response.json()["applied_version_id"])
+    assert record is not None
+
+
+def test_unified_registry_proposal_rejects_invalid_template_on_approve(tmp_path) -> None:
+    _, client = make_client(tmp_path)
+    create_response = client.post(
+        "/templates/patch-proposals",
+        json={
+            "item_id": "invalid-template",
+            "change_kind": "create",
+            "diff_text": "Invalid template.",
+            "proposed_content": '{"id":"invalid-template"}',
+        },
+    )
+    proposal_id = create_response.json()["proposal_id"]
+    approve_response = client.post(f"/registry/patch-proposals/{proposal_id}/approve")
+
+    assert create_response.status_code == 200
+    assert approve_response.status_code == 422
+    assert approve_response.json()["detail"]["code"] == "proposal_invalid"
+
+
+def test_approved_new_skill_proposal_is_disabled_by_default(tmp_path) -> None:
+    app, client = make_client(tmp_path)
+    skill_content = "# Product Failure Rule\n\nWhen feedback mentions broken labels, preserve label geometry."
+    create_response = client.post(
+        "/skills/patch-proposals",
+        json={
+            "item_id": "product-failure-rule",
+            "change_kind": "create",
+            "diff_text": "Create new skill.",
+            "proposed_content": skill_content,
+        },
+    )
+    approve_response = client.post(
+        f"/registry/patch-proposals/{create_response.json()['proposal_id']}/approve"
+    )
+    skill_response = client.get("/skills/product-failure-rule")
+
+    assert approve_response.status_code == 200
+    assert skill_response.status_code == 200
+    assert skill_response.json()["content"] == skill_content
+    assert skill_response.json()["enabled"] is False
+    with new_session(app.state.engine) as db:
+        setting = db.get(AppSettingRecord, "skill_enabled:product-failure-rule")
+    assert setting is not None
+    assert setting.value == "0"

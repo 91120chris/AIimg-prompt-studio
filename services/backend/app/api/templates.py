@@ -26,13 +26,22 @@ def _engine(request: Request):
 
 
 def _proposal_response(record: RegistryPatchProposalRecord) -> RegistryPatchProposalResponse:
+    validation = None
+    if record.validation_json:
+        try:
+            validation = json.loads(record.validation_json)
+        except json.JSONDecodeError:
+            validation = None
     return RegistryPatchProposalResponse(
         proposal_id=record.proposal_id,
         registry_kind="template",
+        change_kind=record.change_kind,
         item_id=record.target_id,
         status=record.status,
+        summary=record.summary,
         diff_text=record.diff_text,
         proposed_content=record.proposed_content,
+        validation=validation,
         applied_version_id=record.applied_version_id,
         created_at=record.created_at,
     )
@@ -264,10 +273,14 @@ def preview_template(payload: TemplateContentRequest) -> TemplatePreviewResponse
     template_payload, errors = _parse_template_content(payload.content)
     if template_payload is None:
         return TemplatePreviewResponse(valid=False, errors=errors)
+    prompt_structure = template_payload.get("prompt_structure")
     return TemplatePreviewResponse(
         valid=True,
         template_id=_template_id_from_payload(template_payload),
         questionnaire=_preview_payload(template_payload),
+        sample_prompt=payload.sample_prompt,
+        mode=payload.mode,
+        prompt_structure_preview=prompt_structure if isinstance(prompt_structure, dict) else None,
         errors=[],
     )
 
@@ -400,8 +413,10 @@ def create_template_patch_proposal(
         record = RegistryPatchProposalRecord(
             proposal_id=new_id("proposal"),
             registry_kind="template",
+            change_kind=payload.change_kind,
             target_id=target_id,
             status="pending",
+            summary=payload.summary,
             diff_text=diff_text,
             proposed_content=payload.proposed_content,
         )

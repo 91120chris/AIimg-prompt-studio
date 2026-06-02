@@ -58,6 +58,9 @@ class PromptVersionRecord(SQLModel, table=True):
     prompt_version_id: str = Field(primary_key=True)
     session_id: str
     prompt_text: str
+    title: str | None = None
+    source: str = "optimized_prompt"
+    metadata_json: str = "{}"
     created_at: str = Field(default_factory=utc_now_iso)
 
 
@@ -128,10 +131,14 @@ class RegistryPatchProposalRecord(SQLModel, table=True):
 
     proposal_id: str = Field(primary_key=True)
     registry_kind: str
+    change_kind: str = "update"
     target_id: str | None = None
     status: str
+    summary: str | None = None
     diff_text: str
     proposed_content: str | None = None
+    validation_json: str | None = None
+    source_json: str | None = None
     applied_version_id: str | None = None
     created_at: str = Field(default_factory=utc_now_iso)
 

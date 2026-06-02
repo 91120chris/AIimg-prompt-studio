@@ -783,3 +783,66 @@ def test_agent_turn_rejects_template_mode_mismatch(monkeypatch, tmp_path) -> Non
     assert response.status_code == 422
     assert response.json()["detail"]["code"] == "template_mode_mismatch"
     assert FakeCodexRunner.prompts == []
+
+
+def test_agent_registry_proposal_creates_pending_template_proposal(monkeypatch, tmp_path) -> None:
+    from app.api import agent
+
+    proposed_template = """
+    {
+      "id": "agent-made-template",
+      "name": "Agent Made Template",
+      "applies_to": ["t2i"],
+      "description": "Created from the current prompt.",
+      "questions": [{"id": "subject", "type": "text", "label": "Subject"}],
+      "prompt_structure": {}
+    }
+    """
+    FakeCodexRunner.responses = [
+        OptimizedPromptTurnResponse(
+            kind="optimized_prompt",
+            message="已建立 template 提案",
+            optimized_prompt=proposed_template,
+            prompt_version_title="Agent Made Template",
+        )
+    ]
+    FakeCodexRunner.prompts = []
+    monkeypatch.setattr(agent, "CodexAgentRunner", FakeCodexRunner)
+
+    app, client = make_test_app(tmp_path)
+    session_id = client.post("/sessions", json={"title": "Proposal"}).json()["session_id"]
+    with new_session(app.state.engine) as db:
+        db.add(PromptRecord(prompt_id="prompt_for_proposal", session_id=session_id, text="glass bottle"))
+        db.add(
+            PromptVersionRecord(
+                prompt_version_id="promptv_for_proposal",
+                session_id=session_id,
+                prompt_text="cinematic glass bottle",
+                title="Optimized",
+            )
+        )
+        db.commit()
+
+    response = client.post(
+        "/agent/registry-proposals",
+        json={
+            "session_id": session_id,
+            "proposal_kind": "template",
+            "change_kind": "create",
+            "authoring_instruction": "把目前 prompt 做成 template",
+            "mode": "t2i",
+            "provider": "codex_cli",
+            "codex_model": "gpt-5.5",
+        },
+    )
+    template_response = client.get("/templates/agent-made-template")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["registry_kind"] == "template"
+    assert payload["change_kind"] == "create"
+    assert payload["status"] == "pending"
+    assert payload["item_id"] == "agent-made-template"
+    assert payload["validation"]["valid"] is True
+    assert "glass bottle" in FakeCodexRunner.prompts[0]
+    assert template_response.status_code == 404

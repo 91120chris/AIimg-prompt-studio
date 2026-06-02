@@ -226,10 +226,13 @@ export const registryItemResponseSchema = z.object({
 export const registryPatchProposalResponseSchema = z.object({
   proposal_id: z.string(),
   registry_kind: z.enum(["skill", "template"]),
+  change_kind: z.enum(["create", "update"]).default("update"),
   item_id: z.string().nullable(),
   status: z.enum(["pending", "approved", "rejected"]),
+  summary: z.string().nullable().optional(),
   diff_text: z.string(),
   proposed_content: z.string().nullable(),
+  validation: z.record(z.unknown()).nullable().optional(),
   applied_version_id: z.string().nullable(),
   created_at: z.string(),
 });
@@ -293,6 +296,27 @@ export const templatePreviewResponseSchema = z.object({
   valid: z.boolean(),
   template_id: z.string().nullable(),
   questionnaire: questionnaireSchema.nullable(),
+  sample_prompt: z.string().nullable().optional(),
+  mode: z.enum(["t2i", "i2i"]).nullable().optional(),
+  prompt_structure_preview: z.record(z.unknown()).nullable().optional(),
+  errors: z.array(z.string()),
+});
+
+export const promptVersionResponseSchema = z.object({
+  prompt_version_id: z.string(),
+  session_id: z.string(),
+  prompt_text: z.string(),
+  title: z.string().nullable(),
+  source: z.string(),
+  metadata: z.record(z.unknown()),
+  is_current: z.boolean(),
+  created_at: z.string(),
+});
+
+export const registryPatchProposalValidationResponseSchema = z.object({
+  valid: z.boolean(),
+  registry_kind: z.enum(["skill", "template"]),
+  item_id: z.string().nullable(),
   errors: z.array(z.string()),
 });
 
@@ -305,6 +329,7 @@ export const logResponseSchema = z.object({
 
 export const registryItemsResponseSchema = z.array(registryItemResponseSchema);
 export const registryPatchProposalsResponseSchema = z.array(registryPatchProposalResponseSchema);
+export const promptVersionsResponseSchema = z.array(promptVersionResponseSchema);
 export const modelInfoListResponseSchema = z.array(modelInfoResponseSchema);
 export const logsResponseSchema = z.array(logResponseSchema);
 
@@ -323,6 +348,10 @@ export type ReferenceImageResponse = z.infer<typeof referenceImageResponseSchema
 export type SessionResponse = z.infer<typeof sessionResponseSchema>;
 export type RegistryItemResponse = z.infer<typeof registryItemResponseSchema>;
 export type RegistryPatchProposalResponse = z.infer<typeof registryPatchProposalResponseSchema>;
+export type RegistryPatchProposalValidationResponse = z.infer<
+  typeof registryPatchProposalValidationResponseSchema
+>;
+export type PromptVersionResponse = z.infer<typeof promptVersionResponseSchema>;
 export type TemplateValidationResponse = z.infer<typeof templateValidationResponseSchema>;
 export type TemplatePreviewResponse = z.infer<typeof templatePreviewResponseSchema>;
 export type ModelInfoResponse = z.infer<typeof modelInfoResponseSchema>;

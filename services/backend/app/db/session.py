@@ -24,6 +24,7 @@ def create_db_engine(settings: Settings) -> Engine:
 
 def init_db(engine: Engine) -> None:
     SQLModel.metadata.create_all(engine)
+    _ensure_prompt_version_columns(engine)
     _ensure_registry_patch_columns(engine)
 
 
@@ -41,8 +42,12 @@ def _ensure_registry_patch_columns(engine: Engine) -> None:
         column["name"] for column in inspector.get_columns("registry_patch_proposals")
     }
     columns_to_add = {
+        "change_kind": "TEXT NOT NULL DEFAULT 'update'",
         "target_id": "TEXT",
+        "summary": "TEXT",
         "proposed_content": "TEXT",
+        "validation_json": "TEXT",
+        "source_json": "TEXT",
         "applied_version_id": "TEXT",
     }
     with engine.begin() as connection:
@@ -51,6 +56,31 @@ def _ensure_registry_patch_columns(engine: Engine) -> None:
                 connection.execute(
                     text(
                         "ALTER TABLE registry_patch_proposals "
+                        f"ADD COLUMN {column_name} {column_type}"
+                    )
+                )
+
+
+def _ensure_prompt_version_columns(engine: Engine) -> None:
+    inspector = inspect(engine)
+    table_names = set(inspector.get_table_names())
+    if "prompt_versions" not in table_names:
+        return
+
+    existing_columns = {
+        column["name"] for column in inspector.get_columns("prompt_versions")
+    }
+    columns_to_add = {
+        "title": "TEXT",
+        "source": "TEXT NOT NULL DEFAULT 'optimized_prompt'",
+        "metadata_json": "TEXT NOT NULL DEFAULT '{}'",
+    }
+    with engine.begin() as connection:
+        for column_name, column_type in columns_to_add.items():
+            if column_name not in existing_columns:
+                connection.execute(
+                    text(
+                        "ALTER TABLE prompt_versions "
                         f"ADD COLUMN {column_name} {column_type}"
                     )
                 )

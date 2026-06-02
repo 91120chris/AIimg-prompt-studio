@@ -38,15 +38,25 @@ def test_flux_provider_rejects_folder_without_checkpoint(tmp_path) -> None:
 
 def test_flux_provider_uses_single_file_transformer_loader(monkeypatch, tmp_path) -> None:
     import diffusers
+    import safetensors.torch
 
     checkpoint_path = tmp_path / "flux-2-klein-9b-fp8.safetensors"
     checkpoint_path.write_bytes(b"fake")
     calls: dict[str, object] = {}
 
+    def fake_load_file(path: str, device: str):
+        calls["load_file_path"] = path
+        calls["load_file_device"] = device
+        return {
+            "double_blocks.0.img_attn.qkv.weight": "qkv-weight",
+            "double_blocks.0.img_attn.qkv.input_scale": "input-scale",
+            "double_blocks.0.img_attn.qkv.weight_scale": "weight-scale",
+        }
+
     class FakeTransformer:
         @staticmethod
-        def from_single_file(path: str, **kwargs):
-            calls["checkpoint_path"] = path
+        def from_single_file(state_dict: dict[str, object], **kwargs):
+            calls["checkpoint_state_dict"] = state_dict
             calls["transformer_kwargs"] = kwargs
             return "fp8-transformer"
 
@@ -61,6 +71,7 @@ def test_flux_provider_uses_single_file_transformer_loader(monkeypatch, tmp_path
             return FakePipe()
 
     unload_flux_pipeline()
+    monkeypatch.setattr(safetensors.torch, "load_file", fake_load_file)
     monkeypatch.setattr(diffusers, "Flux2Transformer2DModel", FakeTransformer)
     monkeypatch.setattr(diffusers, "Flux2KleinPipeline", FakePipeline)
     settings = Settings(
@@ -72,7 +83,11 @@ def test_flux_provider_uses_single_file_transformer_loader(monkeypatch, tmp_path
     pipe, _torch = _load_pipeline(settings, str(checkpoint_path))
 
     assert isinstance(pipe, FakePipe)
-    assert calls["checkpoint_path"] == str(checkpoint_path.resolve())
+    assert calls["load_file_path"] == str(checkpoint_path.resolve())
+    assert calls["load_file_device"] == "cpu"
+    assert calls["checkpoint_state_dict"] == {
+        "double_blocks.0.img_attn.qkv.weight": "qkv-weight",
+    }
     assert calls["transformer_kwargs"]["config"] == "black-forest-labs/FLUX.2-klein-9b"
     assert calls["transformer_kwargs"]["subfolder"] == "transformer"
     assert calls["pipeline_repo_id"] == "black-forest-labs/FLUX.2-klein-9b"

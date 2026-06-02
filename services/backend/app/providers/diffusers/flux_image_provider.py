@@ -1,4 +1,5 @@
 import inspect
+import gc
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -109,6 +110,7 @@ def _load_pipeline(settings: Settings, model_path: str):
     try:
         import torch
         from diffusers import Flux2KleinPipeline, Flux2Transformer2DModel
+        from safetensors.torch import load_file
     except ImportError as error:
         raise DiffusersFluxProviderError(
             StructuredError(
@@ -142,10 +144,13 @@ def _load_pipeline(settings: Settings, model_path: str):
         pipeline_kwargs["device_map"] = device_map
 
     try:
+        checkpoint_state = _load_fp8_checkpoint_state_dict(load_file, checkpoint_path)
         transformer = Flux2Transformer2DModel.from_single_file(
-            str(checkpoint_path),
+            checkpoint_state,
             **transformer_kwargs,
         )
+        del checkpoint_state
+        gc.collect()
         pipe = Flux2KleinPipeline.from_pretrained(
             settings.flux_pipeline_repo_id,
             transformer=transformer,
@@ -174,6 +179,19 @@ def _load_pipeline(settings: Settings, model_path: str):
     _maybe_enable_memory_savers(pipe)
     _PIPELINE_CACHE[cache_key] = pipe
     return pipe, torch
+
+
+def _load_fp8_checkpoint_state_dict(load_file, checkpoint_path: Path) -> dict[str, object]:
+    state_dict = load_file(str(checkpoint_path), device="cpu")
+    return {
+        key: value
+        for key, value in state_dict.items()
+        if not _is_flux_fp8_scale_metadata_key(key)
+    }
+
+
+def _is_flux_fp8_scale_metadata_key(key: str) -> bool:
+    return key.endswith(".input_scale") or key.endswith(".weight_scale")
 
 
 def _device_loading_plan(value: str | None) -> tuple[str | None, str | None]:

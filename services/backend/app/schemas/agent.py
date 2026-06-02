@@ -18,7 +18,6 @@ class AgentTurnRequest(StrictBaseModel):
     original_prompt: str = Field(min_length=1, max_length=12000)
     mode: WorkflowMode = "t2i"
     provider: AgentProvider = "codex_cli"
-    use_persistent_codex_session: bool = True
     include_original_prompt_context: bool = True
     include_optimized_prompt_context: bool = True
     codex_model: str | None = None
@@ -56,7 +55,6 @@ class ErrorTurnResponse(StrictBaseModel):
 
 class AgentQuestionnaireSubmitRequest(QuestionnaireAnswerPayload):
     provider: AgentProvider = "codex_cli"
-    use_persistent_codex_session: bool = True
     include_original_prompt_context: bool = True
     include_optimized_prompt_context: bool = True
     codex_model: str | None = None
@@ -70,7 +68,6 @@ class AgentFeedbackQuestionnaireRequest(StrictBaseModel):
     session_id: str
     job_id: str
     provider: AgentProvider = "codex_cli"
-    use_persistent_codex_session: bool = True
     include_original_prompt_context: bool = True
     include_optimized_prompt_context: bool = True
     codex_model: str | None = None
@@ -83,7 +80,6 @@ class AgentFeedbackQuestionnaireRequest(StrictBaseModel):
 class AgentRefineRequest(QuestionnaireAnswerPayload):
     job_id: str
     provider: AgentProvider = "codex_cli"
-    use_persistent_codex_session: bool = True
     include_original_prompt_context: bool = True
     include_optimized_prompt_context: bool = True
     codex_model: str | None = None

@@ -13,16 +13,16 @@ def test_flux_default_device_map_is_balanced() -> None:
     settings = Settings(_env_file=None)
 
     assert settings.flux_device_map == "balanced"
-    assert _device_loading_plan(settings.flux_device_map) == ("balanced", None)
+    assert _device_loading_plan(settings.flux_device_map) == (None, None, True)
 
 
 def test_flux_cuda_is_direct_device_not_device_map() -> None:
-    assert _device_loading_plan("cuda") == (None, "cuda")
+    assert _device_loading_plan("cuda") == (None, "cuda", False)
 
 
 def test_flux_blank_device_map_disables_device_placement() -> None:
-    assert _device_loading_plan("") == (None, None)
-    assert _device_loading_plan("none") == (None, None)
+    assert _device_loading_plan("") == (None, None, False)
+    assert _device_loading_plan("none") == (None, None, False)
 
 
 def test_flux_provider_rejects_folder_without_checkpoint(tmp_path) -> None:
@@ -61,7 +61,8 @@ def test_flux_provider_uses_single_file_transformer_loader(monkeypatch, tmp_path
             return "fp8-transformer"
 
     class FakePipe:
-        pass
+        def enable_model_cpu_offload(self):
+            calls["cpu_offload_enabled"] = True
 
     class FakePipeline:
         @staticmethod
@@ -76,7 +77,7 @@ def test_flux_provider_uses_single_file_transformer_loader(monkeypatch, tmp_path
     monkeypatch.setattr(diffusers, "Flux2KleinPipeline", FakePipeline)
     settings = Settings(
         flux_pipeline_repo_id="black-forest-labs/FLUX.2-klein-9b",
-        flux_device_map="",
+        flux_device_map="balanced",
         _env_file=None,
     )
 
@@ -92,4 +93,6 @@ def test_flux_provider_uses_single_file_transformer_loader(monkeypatch, tmp_path
     assert calls["transformer_kwargs"]["subfolder"] == "transformer"
     assert calls["pipeline_repo_id"] == "black-forest-labs/FLUX.2-klein-9b"
     assert calls["pipeline_kwargs"]["transformer"] == "fp8-transformer"
+    assert "device_map" not in calls["pipeline_kwargs"]
+    assert calls["cpu_offload_enabled"] is True
     unload_flux_pipeline()

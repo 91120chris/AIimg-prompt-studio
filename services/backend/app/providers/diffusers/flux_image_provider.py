@@ -79,7 +79,8 @@ class DiffusersFluxProvider:
 
 
 _PIPELINE_CACHE: dict[str, object] = {}
-DIRECT_DEVICE_VALUES = {"cuda", "mps", "xpu"}
+DIRECT_DEVICE_VALUES = {"cpu", "cuda", "mps", "xpu"}
+CPU_OFFLOAD_VALUES = {"auto", "balanced", "balanced_low_0", "sequential"}
 NO_DEVICE_MAP_VALUES = {"", "none", "null", "false", "off"}
 
 
@@ -120,10 +121,10 @@ def _load_pipeline(settings: Settings, model_path: str):
             )
         ) from error
 
-    device_map, target_device = _device_loading_plan(settings.flux_device_map)
+    device_map, target_device, use_cpu_offload = _device_loading_plan(settings.flux_device_map)
     cache_key = (
         f"{checkpoint_path}|pipeline={settings.flux_pipeline_repo_id}|{settings.flux_torch_dtype}|"
-        f"device_map={device_map}|device={target_device}"
+        f"device_map={device_map}|device={target_device}|cpu_offload={use_cpu_offload}"
     )
     if cache_key in _PIPELINE_CACHE:
         return _PIPELINE_CACHE[cache_key], torch
@@ -177,6 +178,8 @@ def _load_pipeline(settings: Settings, model_path: str):
             ) from error
 
     _maybe_enable_memory_savers(pipe)
+    if use_cpu_offload:
+        _enable_model_cpu_offload(pipe)
     _PIPELINE_CACHE[cache_key] = pipe
     return pipe, torch
 
@@ -194,13 +197,15 @@ def _is_flux_fp8_scale_metadata_key(key: str) -> bool:
     return key.endswith(".input_scale") or key.endswith(".weight_scale")
 
 
-def _device_loading_plan(value: str | None) -> tuple[str | None, str | None]:
+def _device_loading_plan(value: str | None) -> tuple[str | None, str | None, bool]:
     normalized = (value or "").strip().lower()
     if normalized in NO_DEVICE_MAP_VALUES:
-        return None, None
+        return None, None, False
+    if normalized in CPU_OFFLOAD_VALUES:
+        return None, None, True
     if normalized in DIRECT_DEVICE_VALUES:
-        return None, normalized
-    return normalized, None
+        return None, normalized, False
+    return normalized, None, False
 
 
 def _pipeline_kwargs(pipe: object, torch, payload: GenerationConfirmRequest) -> dict[str, object]:
@@ -248,13 +253,28 @@ def _torch_dtype(torch, name: str):
 
 
 def _maybe_enable_memory_savers(pipe: object) -> None:
-    for method_name in ("enable_attention_slicing", "enable_vae_slicing", "enable_model_cpu_offload"):
+    for method_name in ("enable_attention_slicing", "enable_vae_slicing"):
         method = getattr(pipe, method_name, None)
         if callable(method):
             try:
                 method()
             except Exception:
                 continue
+
+
+def _enable_model_cpu_offload(pipe: object) -> None:
+    method = getattr(pipe, "enable_model_cpu_offload", None)
+    if callable(method):
+        try:
+            method()
+        except Exception as error:
+            raise DiffusersFluxProviderError(
+                StructuredError(
+                    code="flux_cpu_offload_failed",
+                    message="Diffusers FLUX CPU offload could not be enabled.",
+                    suggestion=str(error)[:900],
+                )
+            ) from error
 
 
 def _load_provider_error(error: Exception) -> DiffusersFluxProviderError:

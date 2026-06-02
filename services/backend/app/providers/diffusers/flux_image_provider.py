@@ -74,6 +74,8 @@ class DiffusersFluxProvider:
 
 
 _PIPELINE_CACHE: dict[str, object] = {}
+DIRECT_DEVICE_VALUES = {"cuda", "mps", "xpu"}
+NO_DEVICE_MAP_VALUES = {"", "none", "null", "false", "off"}
 
 
 def unload_flux_pipeline() -> None:
@@ -101,14 +103,18 @@ def _load_pipeline(settings: Settings, model_path: str):
         ) from error
 
     resolved_path = str(Path(model_path).expanduser().resolve())
-    cache_key = f"{resolved_path}|{settings.flux_torch_dtype}|{settings.flux_device_map}"
+    device_map, target_device = _device_loading_plan(settings.flux_device_map)
+    cache_key = (
+        f"{resolved_path}|{settings.flux_torch_dtype}|"
+        f"device_map={device_map}|device={target_device}"
+    )
     if cache_key in _PIPELINE_CACHE:
         return _PIPELINE_CACHE[cache_key], torch
 
     dtype = _torch_dtype(torch, settings.flux_torch_dtype)
     kwargs: dict[str, Any] = {"dtype": dtype}
-    if settings.flux_device_map:
-        kwargs["device_map"] = settings.flux_device_map
+    if device_map:
+        kwargs["device_map"] = device_map
 
     try:
         pipe = DiffusionPipeline.from_pretrained(resolved_path, **kwargs)
@@ -119,9 +125,35 @@ def _load_pipeline(settings: Settings, model_path: str):
     except Exception as error:
         raise _load_provider_error(error) from error
 
+    if target_device:
+        try:
+            moved_pipe = pipe.to(target_device)
+            if moved_pipe is not None:
+                pipe = moved_pipe
+        except Exception as error:
+            raise DiffusersFluxProviderError(
+                StructuredError(
+                    code="flux_device_unavailable",
+                    message="The configured FLUX device could not be used.",
+                    suggestion=(
+                        "Set FLUX_DEVICE_MAP=balanced or FLUX_DEVICE_MAP=cpu in .env, "
+                        "then restart the backend."
+                    ),
+                )
+            ) from error
+
     _maybe_enable_memory_savers(pipe)
     _PIPELINE_CACHE[cache_key] = pipe
     return pipe, torch
+
+
+def _device_loading_plan(value: str | None) -> tuple[str | None, str | None]:
+    normalized = (value or "").strip().lower()
+    if normalized in NO_DEVICE_MAP_VALUES:
+        return None, None
+    if normalized in DIRECT_DEVICE_VALUES:
+        return None, normalized
+    return normalized, None
 
 
 def _pipeline_kwargs(pipe: object, torch, payload: GenerationConfirmRequest) -> dict[str, object]:

@@ -9,6 +9,13 @@ from app.main import create_app
 from app.settings import Settings
 
 
+def make_flux_pipeline_dir(tmp_path, name: str = "private-flux"):
+    model_dir = tmp_path / "local_models" / name
+    model_dir.mkdir(parents=True, exist_ok=True)
+    (model_dir / "model_index.json").write_text("{}", encoding="utf-8")
+    return model_dir
+
+
 def make_client(tmp_path, hf_token: str | None = None) -> tuple[object, TestClient]:
     app = create_app(
         Settings(
@@ -23,7 +30,7 @@ def make_client(tmp_path, hf_token: str | None = None) -> tuple[object, TestClie
 
 def test_flux_status_and_set_path_do_not_return_raw_model_path(tmp_path) -> None:
     _, client = make_client(tmp_path)
-    model_path = str(tmp_path / "local_models" / "flux-secret-path")
+    model_path = str(make_flux_pipeline_dir(tmp_path, "flux-secret-path"))
 
     initial = client.get("/models/flux/status")
     set_path = client.post("/models/flux/set-path", json={"model_path": model_path})
@@ -44,9 +51,10 @@ def test_flux_status_and_set_path_do_not_return_raw_model_path(tmp_path) -> None
 
 def fake_flux_install(tmp_path):
     def _install(_settings) -> FluxInstallResult:
+        model_dir = make_flux_pipeline_dir(tmp_path, "downloaded-flux")
         return FluxInstallResult(
-            model_path=str(tmp_path / "local_models" / "downloaded-flux"),
-            repo_id="black-forest-labs/FLUX.2-klein-9b-fp8",
+            model_path=str(model_dir),
+            repo_id="black-forest-labs/FLUX.2-klein-9b",
             revision=None,
         )
 
@@ -70,7 +78,7 @@ def test_flux_install_and_unload_update_status(monkeypatch, tmp_path) -> None:
 
 def test_flux_readiness_does_not_return_hf_token_or_raw_path(tmp_path) -> None:
     _, client = make_client(tmp_path, hf_token="hf_secret_token")
-    model_path = str(tmp_path / "local_models" / "private-flux")
+    model_path = str(make_flux_pipeline_dir(tmp_path))
 
     client.post("/models/flux/set-path", json={"model_path": model_path})
     readiness = client.get("/models/flux/readiness")
@@ -97,7 +105,7 @@ def test_flux_install_requires_hf_token(tmp_path) -> None:
 def test_flux_actions_preserve_path_label_and_write_safe_logs(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(models_api, "install_flux_snapshot", fake_flux_install(tmp_path))
     _, client = make_client(tmp_path, hf_token="hf_test_token")
-    model_path = str(tmp_path / "local_models" / "private-flux")
+    model_path = str(make_flux_pipeline_dir(tmp_path))
 
     set_path = client.post("/models/flux/set-path", json={"model_path": model_path})
     install = client.post("/models/flux/install")

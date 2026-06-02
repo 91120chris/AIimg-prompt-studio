@@ -97,9 +97,9 @@ class Settings(BaseSettings):
     hf_home: str | None = None
     hf_hub_cache: str | None = None
 
-    flux_model_repo_id: str = "black-forest-labs/FLUX.2-klein-9b-fp8"
+    flux_model_repo_id: str = "black-forest-labs/FLUX.2-klein-9b"
     flux_model_revision: str | None = None
-    flux_model_local_dir: str = "local_models/huggingface/flux2-klein-9b-fp8"
+    flux_model_local_dir: str = "local_models/huggingface/flux2-klein-9b"
     flux_device_map: str = "balanced"
     flux_torch_dtype: str = "bfloat16"
 

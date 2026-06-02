@@ -1956,7 +1956,7 @@ function App() {
                 <p>{managerBusy ? "正在載入模型狀態..." : `${managerModels.length} 個模型狀態`}</p>
                 <div className="manager-model-controls" aria-label="FLUX 模型管理">
                   <div className="manager-state-line">
-                    <span>FLUX.2 Klein 9B FP8</span>
+                    <span>FLUX.2 Klein 9B Diffusers</span>
                     <strong>
                       {fluxModel
                         ? `${fluxModel.status}${fluxModel.path_label ? ` / ${fluxModel.path_label}` : ""}`
@@ -1976,7 +1976,7 @@ function App() {
                     <div className="manager-path-row">
                       <input
                         value={fluxPathDraft}
-                        placeholder="例如 C:\\models\\flux2-klein-fp8"
+                        placeholder="例如 C:\\models\\flux2-klein-9b"
                         onChange={(event) => setFluxPathDraft(event.target.value)}
                       />
                       <button

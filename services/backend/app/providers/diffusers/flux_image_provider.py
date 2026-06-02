@@ -6,6 +6,7 @@ from typing import Any
 from sqlmodel import Session
 
 from app.core.image_records import register_generated_image
+from app.core.flux_model_manager import inspect_flux_diffusers_pipeline_path
 from app.core.session_workspace import ensure_session_workspace
 from app.db.models import GeneratedImageRecord, GenerationJobRecord
 from app.schemas.errors import StructuredError
@@ -90,6 +91,17 @@ def unload_flux_pipeline() -> None:
 
 
 def _load_pipeline(settings: Settings, model_path: str):
+    resolved_path = Path(model_path).expanduser().resolve()
+    path_problem = inspect_flux_diffusers_pipeline_path(resolved_path)
+    if path_problem is not None:
+        raise DiffusersFluxProviderError(
+            StructuredError(
+                code=path_problem.code,
+                message=path_problem.message,
+                suggestion=path_problem.suggestion,
+            )
+        )
+
     try:
         import torch
         from diffusers import DiffusionPipeline
@@ -102,7 +114,6 @@ def _load_pipeline(settings: Settings, model_path: str):
             )
         ) from error
 
-    resolved_path = str(Path(model_path).expanduser().resolve())
     device_map, target_device = _device_loading_plan(settings.flux_device_map)
     cache_key = (
         f"{resolved_path}|{settings.flux_torch_dtype}|"
@@ -117,11 +128,14 @@ def _load_pipeline(settings: Settings, model_path: str):
         kwargs["device_map"] = device_map
 
     try:
-        pipe = DiffusionPipeline.from_pretrained(resolved_path, **kwargs)
+        pipe = DiffusionPipeline.from_pretrained(str(resolved_path), **kwargs)
     except TypeError:
-        kwargs.pop("dtype", None)
-        kwargs["torch_dtype"] = dtype
-        pipe = DiffusionPipeline.from_pretrained(resolved_path, **kwargs)
+        try:
+            kwargs.pop("dtype", None)
+            kwargs["torch_dtype"] = dtype
+            pipe = DiffusionPipeline.from_pretrained(str(resolved_path), **kwargs)
+        except Exception as error:
+            raise _load_provider_error(error) from error
     except Exception as error:
         raise _load_provider_error(error) from error
 

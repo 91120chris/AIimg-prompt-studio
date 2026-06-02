@@ -11,12 +11,28 @@ from huggingface_hub.errors import (
 
 from app.settings import Settings
 
+DEFAULT_FLUX_DIFFUSERS_REPO_ID = "black-forest-labs/FLUX.2-klein-9b"
+DEFAULT_FLUX_DIFFUSERS_LOCAL_DIR = "local_models/huggingface/flux2-klein-9b"
+DIFFUSERS_MODEL_INDEX = "model_index.json"
+DIFFUSERS_PIPELINE_SUGGESTION = (
+    "Install black-forest-labs/FLUX.2-klein-9b, or choose a local Diffusers pipeline "
+    "folder that contains model_index.json. The FP8 FLUX.2 Klein repos are single-file "
+    "checkpoints and are not supported by this provider yet."
+)
+
 
 @dataclass(frozen=True)
 class FluxInstallResult:
     model_path: str
     repo_id: str
     revision: str | None
+
+
+@dataclass(frozen=True)
+class FluxModelPathProblem:
+    code: str
+    message: str
+    suggestion: str
 
 
 class FluxInstallError(Exception):
@@ -97,11 +113,58 @@ def install_flux_snapshot(settings: Settings) -> FluxInstallResult:
             suggestion="Check network access, Hugging Face permissions, and available disk space.",
         ) from error
 
+    problem = inspect_flux_diffusers_pipeline_path(downloaded_path)
+    if problem is not None:
+        raise FluxInstallError(
+            code=problem.code,
+            message=problem.message,
+            suggestion=problem.suggestion,
+        )
+
     return FluxInstallResult(
         model_path=str(Path(downloaded_path).resolve()),
         repo_id=settings.flux_model_repo_id,
         revision=settings.flux_model_revision,
     )
+
+
+def inspect_flux_diffusers_pipeline_path(model_path: str | Path) -> FluxModelPathProblem | None:
+    resolved_path = _resolve_model_path(model_path)
+    if not resolved_path.exists():
+        return FluxModelPathProblem(
+            code="flux_model_path_missing",
+            message="The configured FLUX model path does not exist.",
+            suggestion="Install FLUX again or choose an existing local model folder.",
+        )
+    if resolved_path.is_file():
+        if resolved_path.suffix.lower() == ".safetensors":
+            return FluxModelPathProblem(
+                code="flux_single_file_checkpoint_unsupported",
+                message="The configured FLUX path is a single-file checkpoint, not a Diffusers pipeline folder.",
+                suggestion=DIFFUSERS_PIPELINE_SUGGESTION,
+            )
+        return FluxModelPathProblem(
+            code="flux_model_path_not_directory",
+            message="The configured FLUX model path is a file, not a Diffusers pipeline folder.",
+            suggestion=DIFFUSERS_PIPELINE_SUGGESTION,
+        )
+    if not (resolved_path / DIFFUSERS_MODEL_INDEX).is_file():
+        safetensors = list(resolved_path.glob("*.safetensors"))
+        if safetensors:
+            return FluxModelPathProblem(
+                code="flux_single_file_checkpoint_unsupported",
+                message=(
+                    "The configured FLUX folder contains single-file checkpoint weights, "
+                    "but not a Diffusers pipeline model_index.json."
+                ),
+                suggestion=DIFFUSERS_PIPELINE_SUGGESTION,
+            )
+        return FluxModelPathProblem(
+            code="flux_model_index_missing",
+            message="The configured FLUX folder is missing Diffusers model_index.json.",
+            suggestion=DIFFUSERS_PIPELINE_SUGGESTION,
+        )
+    return None
 
 
 def _http_install_error(status_code: int | None) -> FluxInstallError:
@@ -129,6 +192,13 @@ def _resolve_local_dir(value: str) -> Path:
     if path.is_absolute():
         return path
     return _project_root() / path
+
+
+def _resolve_model_path(value: str | Path) -> Path:
+    path = Path(value).expanduser()
+    if path.is_absolute():
+        return path.resolve()
+    return (_project_root() / path).resolve()
 
 
 def _resolve_cache_dir(settings: Settings) -> Path | None:

@@ -5,7 +5,6 @@ Local-first T2I / I2I prompt optimization desktop app.
 Current implementation covers the runnable Tauri + React shell, FastAPI backend, provider status, SQLite session storage, safe file URLs, reference image thumbnails, the Codex and Ollama questionnaire loops, the Codex CLI image-generation path after explicit user confirmation, post-generation feedback questionnaires, and prompt refinement from feedback.
 Safe runtime settings are persisted in SQLite through `app_settings`, so provider/model selections survive backend restarts.
 The Phase 1 registry layer is also in place: project-local seed files define the initial skills/templates, FastAPI seeds them into SQLite on startup, and approved patch proposals create new skill/template versions without allowing the agent to directly edit registry files.
-Phase 2 has started: the FLUX manager can read `HF_TOKEN`, report safe Hugging Face readiness, install the configured FP8 checkpoint snapshot with `huggingface_hub`, classify gated/private/token/download errors, and register only a safe path label for the frontend. Diffusers T2I can now run through the `diffusers_flux2` image provider when the optional FLUX dependencies and model files are available.
 
 ## Backend
 
@@ -14,14 +13,7 @@ cd services/backend
 cp .env.example .env
 # Edit .env and set HF_TOKEN only if you want future Hugging Face downloads.
 uv sync
-uv run uvicorn app.main:app --reload --host 127.0.0.1 --port 17321
-```
-
-Optional FLUX dependencies:
-
-```bash
-cd services/backend
-uv sync --extra flux
+uv run uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 Run tests:
@@ -129,9 +121,7 @@ $env:RUN_CODEX_SMOKE="1"; uv run pytest -m codex_smoke
 - Ollama is the local fallback agent provider. The desktop shell reads installed Ollama models live from `/api/tags`, lets you choose the current local model, and uses `/api/generate` with structured output schema for questionnaire, prompt optimization, feedback questionnaire, and refinement turns.
 - If a questionnaire creation turn fails because the provider returns an error, or if an agent response fails strict schema validation even after one repair attempt, the backend returns a safe single-question text questionnaire so the user can continue manually instead of losing the flow.
 - The Manager drawer now reads local model status, skill versions, template versions, and recent logs from backend APIs. It can show FLUX/Hugging Face readiness, set a FLUX model path through the Tauri folder picker or manual browser fallback, mark FLUX install pending when `HF_TOKEN` is configured, and unload the FLUX placeholder without exposing the token or full local model path. Patch proposal APIs now support reviewable diff text plus optional proposed content; approving a proposal with an item id and proposed content creates a new SQLite-backed skill/template version.
-- The FLUX install endpoint downloads `FLUX_MODEL_REPO_ID` into `FLUX_MODEL_LOCAL_DIR` when `HF_TOKEN` has access. The default is `black-forest-labs/FLUX.2-klein-9b-fp8`, which provides a single-file FP8 transformer checkpoint. The `diffusers_flux2` image provider loads that checkpoint with `Flux2Transformer2DModel.from_single_file`, then uses `FLUX_PIPELINE_REPO_ID=black-forest-labs/FLUX.2-klein-9b` for the remaining Diffusers pipeline components/config. The core diffusion weights stay FP8.
-- BFL's FP8 checkpoint includes scalar `input_scale` / `weight_scale` metadata tensors. The provider filters those metadata keys before passing the checkpoint into Diffusers so the converter does not treat them as qkv weights.
-- FLUX.2 Klein 9B FP8 is large but substantially lighter than the BF16 transformer. `FLUX_DEVICE_MAP=balanced` is the recommended CUDA setup on a 4090; the provider avoids Diffusers `device_map=balanced` for the custom FP8 transformer and instead enables `enable_model_cpu_offload()` so components move to CUDA when needed without CPU/CUDA tensor mismatches. `FLUX_DEVICE_MAP=cuda` tries to move the loaded pipeline onto CUDA directly and may run out of VRAM.
+- Diffusers FLUX support comes after Milestone 1C / Phase 1.
 - `CORS_ALLOW_ORIGINS` is comma-separated and parsed with `NoDecode`.
 - `CODEX_MODEL_OPTIONS` is comma-separated and parsed with `NoDecode`.
 - Tauri development requires Rust/Cargo. Install the Rust MSVC toolchain before running `npm run tauri:dev`. The FLUX path picker uses Tauri's official dialog plugin; normal browser preview keeps a manual path fallback.

@@ -3,7 +3,7 @@ from PIL import Image
 from sqlmodel import select
 
 from app.core.image_records import register_generated_image
-from app.db.models import GeneratedImageRecord, GenerationJobRecord, ModelStatusRecord
+from app.db.models import GeneratedImageRecord, GenerationJobRecord
 from app.db.session import new_session
 from app.main import create_app
 from app.settings import Settings
@@ -31,19 +31,6 @@ def generation_payload(session_id: str, optimized_prompt: str = "cinematic city"
     }
 
 
-def flux_generation_payload(session_id: str, optimized_prompt: str = "cinematic city") -> dict:
-    payload = generation_payload(session_id, optimized_prompt)
-    payload["provider"] = "diffusers_flux2"
-    payload["parameters"] = {
-        "steps": 8,
-        "guidance": 1.0,
-        "seed": 123,
-        "width": 512,
-        "height": 512,
-    }
-    return payload
-
-
 def fake_success_provider(tmp_path):
     class FakeCodexImageProvider:
         def __init__(self, settings):
@@ -64,28 +51,6 @@ def fake_success_provider(tmp_path):
             ]
 
     return FakeCodexImageProvider
-
-
-def fake_success_flux_provider(tmp_path):
-    class FakeDiffusersFluxProvider:
-        def __init__(self, settings):
-            self.settings = settings
-
-        def generate(self, db, *, job, payload, model_path):
-            source_path = tmp_path / "fake-flux-output.png"
-            Image.new("RGB", (40, 40), color="teal").save(source_path)
-            return [
-                register_generated_image(
-                    db,
-                    self.settings,
-                    session_id=payload.session_id,
-                    source_path=source_path,
-                    provider=payload.provider,
-                    seed=payload.parameters.seed,
-                )
-            ]
-
-    return FakeDiffusersFluxProvider
 
 
 def test_confirm_generation_runs_provider_and_returns_safe_image(monkeypatch, tmp_path) -> None:
@@ -194,41 +159,3 @@ def test_confirm_generation_records_provider_failure(monkeypatch, tmp_path) -> N
     payload = response.json()
     assert payload["status"] == "failed"
     assert payload["error"]["code"] == "codex_image_failed"
-
-
-def test_confirm_generation_runs_diffusers_flux_provider(monkeypatch, tmp_path) -> None:
-    from app.api import generation
-
-    monkeypatch.setattr(generation, "DiffusersFluxProvider", fake_success_flux_provider(tmp_path))
-    app, client = make_test_app(tmp_path)
-    session_id = client.post("/sessions", json={"title": "Flux"}).json()["session_id"]
-    with new_session(app.state.engine) as db:
-        db.add(
-            ModelStatusRecord(
-                model_status_id="diffusers_flux2_klein_9b_fp8",
-                provider="diffusers_flux2_klein_9b_fp8",
-                status="path_selected",
-                details_json='{"model_path":"C:/safe/model/flux"}',
-            )
-        )
-        db.commit()
-
-    response = client.post("/generation/confirm", json=flux_generation_payload(session_id))
-
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["status"] == "succeeded"
-    assert payload["provider"] == "diffusers_flux2"
-    assert payload["images"][0]["provider"] == "diffusers_flux2"
-    assert payload["images"][0]["seed"] == 123
-    assert "storage_path" not in response.text
-
-
-def test_confirm_flux_generation_requires_model_path(tmp_path) -> None:
-    _, client = make_test_app(tmp_path)
-    session_id = client.post("/sessions", json={"title": "Flux"}).json()["session_id"]
-
-    response = client.post("/generation/confirm", json=flux_generation_payload(session_id))
-
-    assert response.status_code == 422
-    assert response.json()["detail"]["code"] == "flux_model_not_configured"

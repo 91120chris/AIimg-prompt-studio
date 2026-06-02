@@ -7,7 +7,6 @@ requires-python = ">=3.11,<3.14"
 dependencies = [
     "fastapi>=0.115.0,<1.0.0",
     "httpx>=0.28.0,<1.0.0",
-    "huggingface-hub>=0.34.0,<1.0.0",
     "pillow>=11.0.0,<13.0.0",
     "pydantic>=2.11.0,<3.0.0",
     "pydantic-settings>=2.9.0,<3.0.0",
@@ -15,15 +14,6 @@ dependencies = [
     "python-multipart>=0.0.20,<1.0.0",
     "sqlmodel>=0.0.24,<1.0.0",
     "uvicorn[standard]>=0.34.0,<1.0.0",
-]
-
-[project.optional-dependencies]
-flux = [
-    "accelerate>=1.12.0,<2.0.0",
-    "diffusers>=0.36.0,<1.0.0",
-    "safetensors>=0.6.0,<1.0.0",
-    "torch>=2.9.0,<3.0.0",
-    "transformers>=4.57.0,<5.0.0",
 ]
 
 [dependency-groups]
@@ -43,14 +33,6 @@ markers = [
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-
-[tool.uv.sources]
-torch = { index = "pytorch-cu128" }
-
-[[tool.uv.index]]
-name = "pytorch-cu128"
-url = "https://download.pytorch.org/whl/cu128"
-explicit = true
 
 [tool.mypy]
 python_version = "3.12"

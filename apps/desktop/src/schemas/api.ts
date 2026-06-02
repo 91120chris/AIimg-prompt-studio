@@ -246,8 +246,6 @@ export const modelInfoResponseSchema = z.object({
 export const fluxReadinessResponseSchema = z.object({
   provider: z.literal("diffusers_flux2_klein_9b_fp8"),
   label: z.string(),
-  repo_id: z.string(),
-  revision: z.string().nullable(),
   hf_token_configured: z.boolean(),
   hf_cache_configured: z.boolean(),
   path_configured: z.boolean(),

@@ -244,8 +244,6 @@ function App() {
   const [seed, setSeed] = useState("");
   const [steps, setSteps] = useState(28);
   const [guidance, setGuidance] = useState(3.5);
-  const [imageWidth, setImageWidth] = useState(1024);
-  const [imageHeight, setImageHeight] = useState(1024);
   const [originalPrompt, setOriginalPrompt] = useState("");
   const [optimizedPrompt, setOptimizedPrompt] = useState("");
   const [includeOriginalPromptContext, setIncludeOriginalPromptContext] = useState(true);
@@ -991,8 +989,6 @@ function App() {
           parameters: {
             steps,
             guidance,
-            width: imageWidth,
-            height: imageHeight,
             seed: seedValue === null ? null : Number.isFinite(seedValue) ? seedValue : null,
           },
           reference_image_ids: referenceImages.map((image) => image.reference_image_id),
@@ -1380,7 +1376,9 @@ function App() {
               }}
             >
               <option value="codex_cli_gpt_image">Codex GPT Image</option>
-              <option value="diffusers_flux2">FLUX Diffusers</option>
+              <option value="diffusers_flux2" disabled>
+                FLUX Phase 2
+              </option>
             </select>
           </label>
           <label className="seed-field">
@@ -1662,28 +1660,6 @@ function App() {
                 onChange={(event) => setGuidance(Number(event.target.value))}
               />
             </label>
-            <label>
-              Width
-              <input
-                min={256}
-                max={2048}
-                step={64}
-                type="number"
-                value={imageWidth}
-                onChange={(event) => setImageWidth(Number(event.target.value))}
-              />
-            </label>
-            <label>
-              Height
-              <input
-                min={256}
-                max={2048}
-                step={64}
-                type="number"
-                value={imageHeight}
-                onChange={(event) => setImageHeight(Number(event.target.value))}
-              />
-            </label>
           </div>
           <label className="editor-block">
             原始 Prompt
@@ -1748,7 +1724,8 @@ function App() {
                 disabled={
                   generationBusy ||
                   backendStatus !== "connected" ||
-                  !optimizedPrompt.trim()
+                  !optimizedPrompt.trim() ||
+                  imageProvider !== "codex_cli_gpt_image"
                 }
                 onClick={() => {
                   void confirmGeneration();
@@ -1976,7 +1953,7 @@ function App() {
                     <div className="manager-path-row">
                       <input
                         value={fluxPathDraft}
-                        placeholder="例如 C:\\models\\flux2-klein-9b-fp8"
+                        placeholder="例如 C:\\models\\flux2-klein-fp8"
                         onChange={(event) => setFluxPathDraft(event.target.value)}
                       />
                       <button

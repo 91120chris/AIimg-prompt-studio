@@ -63,7 +63,7 @@ class Settings(BaseSettings):
     app_env: str = "development"
 
     backend_host: str = "127.0.0.1"
-    backend_port: int = 17321
+    backend_port: int = 8000
     storage_root: str = "storage"
     database_url: str | None = None
     load_persisted_settings: bool = False
@@ -97,14 +97,7 @@ class Settings(BaseSettings):
     hf_home: str | None = None
     hf_hub_cache: str | None = None
 
-    flux_model_repo_id: str = "black-forest-labs/FLUX.2-klein-9b-fp8"
-    flux_model_revision: str | None = None
-    flux_model_local_dir: str = "local_models/huggingface/flux2-klein-9b-fp8"
-    flux_pipeline_repo_id: str = "black-forest-labs/FLUX.2-klein-9b"
-    flux_device_map: str = "balanced"
-    flux_torch_dtype: str = "bfloat16"
-
-    frontend_api_base_url: str = "http://127.0.0.1:17321"
+    frontend_api_base_url: str = "http://127.0.0.1:8000"
 
     @field_validator(
         "cors_allow_origins",
@@ -171,7 +164,6 @@ class Settings(BaseSettings):
         "hf_token",
         "hf_home",
         "hf_hub_cache",
-        "flux_model_revision",
         "codex_default_verbosity",
         "ollama_selected_model",
         mode="before",

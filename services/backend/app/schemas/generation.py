@@ -1,7 +1,5 @@
 from typing import Literal
 
-from pydantic import Field
-
 from app.schemas.base import StrictBaseModel
 from app.schemas.errors import StructuredError
 from app.schemas.provider import CodexReasoningEffort, CodexReasoningSummary, CodexVerbosity
@@ -12,11 +10,9 @@ GenerationJobStatus = Literal["queued", "running", "succeeded", "failed", "cance
 
 
 class GenerationParameters(StrictBaseModel):
-    steps: int = Field(ge=1, le=120)
-    guidance: float = Field(ge=0, le=50)
+    steps: int
+    guidance: float
     seed: int | None = None
-    width: int = Field(default=1024, ge=256, le=2048)
-    height: int = Field(default=1024, ge=256, le=2048)
 
 
 class GenerationConfirmRequest(StrictBaseModel):

@@ -1,23 +1,13 @@
-﻿import json
+import json
 
 from fastapi import APIRouter, HTTPException, Request
 from sqlmodel import select
 
 from app.core.file_store import generated_image_response
 from app.core.session_workspace import new_id
-from app.db.models import (
-    GeneratedImageRecord,
-    GenerationJobRecord,
-    ModelStatusRecord,
-    ReferenceImageRecord,
-    SessionRecord,
-)
+from app.db.models import GeneratedImageRecord, GenerationJobRecord, ReferenceImageRecord, SessionRecord
 from app.db.session import new_session
 from app.providers.codex.codex_image_provider import CodexImageProvider, CodexImageProviderError
-from app.providers.diffusers.flux_image_provider import (
-    DiffusersFluxProvider,
-    DiffusersFluxProviderError,
-)
 from app.schemas.errors import StructuredError
 from app.schemas.generation import (
     GenerationCancelRequest,
@@ -70,8 +60,8 @@ def _validate_references(db, session_id: str, reference_image_ids: list[str]) ->
             422,
             StructuredError(
                 code="too_many_reference_images",
-                message="最多只能使用 2 張參考圖片。",
-                suggestion="請移除多餘的參考圖片後再試一次。",
+                message="目前最多支援 2 張參考圖片。",
+                suggestion="請移除多餘的參考圖片後再生成。",
             ),
         )
 
@@ -92,50 +82,31 @@ def _validate_references(db, session_id: str, reference_image_ids: list[str]) ->
             StructuredError(
                 code="reference_image_not_found",
                 message=f"找不到參考圖片：{', '.join(missing_ids)}。",
-                suggestion="請確認參考圖片屬於目前 session。",
+                suggestion="請重新上傳參考圖片後再試一次。",
             ),
         )
     return records
 
 
-def _flux_model_path(db) -> str:
-    record = db.get(ModelStatusRecord, "diffusers_flux2_klein_9b_fp8")
-    if record is None:
-        raise _structured_http_error(
-            422,
-            StructuredError(
-                code="flux_model_not_configured",
-                message="FLUX model is not installed or configured.",
-                suggestion="Use Manager to install FLUX or select a local FLUX model folder.",
-            ),
-        )
-
-    try:
-        details = json.loads(record.details_json)
-    except json.JSONDecodeError:
-        details = {}
-    model_path = details.get("model_path") if isinstance(details, dict) else None
-    if not isinstance(model_path, str) or not model_path.strip():
-        raise _structured_http_error(
-            422,
-            StructuredError(
-                code="flux_model_not_configured",
-                message="FLUX model path is not configured.",
-                suggestion="Use Manager to install FLUX or select a local FLUX model folder.",
-            ),
-        )
-    return model_path
-
-
 @router.post("/confirm", response_model=GenerationJobResponse)
 def confirm_generation(payload: GenerationConfirmRequest, request: Request) -> GenerationJobResponse:
+    if payload.provider != "codex_cli_gpt_image":
+        raise _structured_http_error(
+            422,
+            StructuredError(
+                code="image_provider_not_implemented",
+                message="目前 1C 先接 Codex GPT Image 生成流程。",
+                suggestion="Diffusers FLUX 會在 Phase 2 接上。",
+            ),
+        )
+
     if not payload.optimized_prompt.strip():
         raise _structured_http_error(
             422,
             StructuredError(
                 code="optimized_prompt_required",
-                message="生成前需要最佳化 Prompt。",
-                suggestion="請先完成問卷或手動填入最佳化 Prompt。",
+                message="生成前需要先有最佳化 Prompt。",
+                suggestion="請先完成問卷並取得最佳化 Prompt，再按下生成。",
             ),
         )
 
@@ -145,12 +116,11 @@ def confirm_generation(payload: GenerationConfirmRequest, request: Request) -> G
                 404,
                 StructuredError(
                     code="session_not_found",
-                    message="找不到目前工作階段。",
-                    suggestion="請建立新的工作階段後再試一次。",
+                    message="找不到工作階段。",
+                    suggestion="請先建立工作階段。",
                 ),
             )
         reference_records = _validate_references(db, payload.session_id, payload.reference_image_ids)
-        flux_model_path = _flux_model_path(db) if payload.provider == "diffusers_flux2" else None
 
         job = GenerationJobRecord(
             job_id=new_id("job"),
@@ -164,32 +134,15 @@ def confirm_generation(payload: GenerationConfirmRequest, request: Request) -> G
         db.commit()
         db.refresh(job)
         try:
-            if payload.provider == "codex_cli_gpt_image":
-                CodexImageProvider(request.app.state.settings).generate(
-                    db,
-                    job=job,
-                    payload=payload,
-                    reference_images=reference_records,
-                )
-            elif payload.provider == "diffusers_flux2":
-                DiffusersFluxProvider(request.app.state.settings).generate(
-                    db,
-                    job=job,
-                    payload=payload,
-                    model_path=flux_model_path or "",
-                )
-            else:
-                raise _structured_http_error(
-                    422,
-                    StructuredError(
-                        code="image_provider_not_supported",
-                        message="Selected image provider is not supported.",
-                        suggestion="Choose Codex GPT Image or Diffusers FLUX.",
-                    ),
-                )
+            CodexImageProvider(request.app.state.settings).generate(
+                db,
+                job=job,
+                payload=payload,
+                reference_images=reference_records,
+            )
             job.status = "succeeded"
             job.error_json = None
-        except (CodexImageProviderError, DiffusersFluxProviderError) as error:
+        except CodexImageProviderError as error:
             job.status = "failed"
             job.error_json = error.error.model_dump_json()
         db.add(job)
@@ -208,7 +161,7 @@ def cancel_generation(payload: GenerationCancelRequest, request: Request) -> Gen
                 StructuredError(
                     code="generation_job_not_found",
                     message="找不到生成工作。",
-                    suggestion="請確認 job id 是否正確。",
+                    suggestion="請確認 job id 後再試一次。",
                 ),
             )
         if job.status in {"succeeded", "failed", "cancelled"}:
@@ -230,8 +183,7 @@ def get_generation_job(job_id: str, request: Request) -> GenerationJobResponse:
                 StructuredError(
                     code="generation_job_not_found",
                     message="找不到生成工作。",
-                    suggestion="請確認 job id 是否正確。",
+                    suggestion="請確認 job id 後再試一次。",
                 ),
             )
         return _job_response(db, job)
-

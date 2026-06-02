@@ -10,7 +10,7 @@ const monorepoRoot = resolve(configDir, "../..");
 export default defineConfig(({ command, mode }) => {
   const env = loadEnv(mode, monorepoRoot, "");
   const frontendApiBaseUrl =
-    env.FRONTEND_API_BASE_URL ?? env.VITE_FRONTEND_API_BASE_URL ?? "http://127.0.0.1:17321";
+    env.FRONTEND_API_BASE_URL ?? env.VITE_FRONTEND_API_BASE_URL ?? "http://127.0.0.1:8000";
   const isBuild = command === "build";
 
   return {

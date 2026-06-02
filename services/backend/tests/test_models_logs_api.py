@@ -91,6 +91,22 @@ def test_local_flux_settings_patch_persists_and_returns_editable_paths(tmp_path)
     assert payload["seed"] == 123
 
 
+def test_local_flux_settings_patch_normalizes_legacy_model_values(tmp_path) -> None:
+    _, client = make_client(tmp_path)
+
+    response = client.patch(
+        "/providers/local-flux/settings",
+        json={
+            "vae_path": "flux2-vae.safetensors",
+            "text_encoder_path": "qwen_3_8b_fp8mixed.safetensors",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["vae_path"] == "flux\\flux2-vae.safetensors"
+    assert response.json()["text_encoder_path"] == "qwen\\qwen_3_8b_fp8mixed.safetensors"
+
+
 def test_local_flux_status_handles_offline_backend(monkeypatch, tmp_path) -> None:
     from app.api import providers
     from app.providers.local_flux.client import LocalFluxClientError

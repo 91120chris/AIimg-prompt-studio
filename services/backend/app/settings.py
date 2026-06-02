@@ -62,6 +62,14 @@ def normalize_codex_default_model(value: str | None) -> str:
     return DEFAULT_CODEX_MODEL_OPTIONS[0]
 
 
+def normalize_local_flux_model_value(value: str) -> str:
+    replacements = {
+        "flux2-vae.safetensors": r"flux\flux2-vae.safetensors",
+        "qwen_3_8b_fp8mixed.safetensors": r"qwen\qwen_3_8b_fp8mixed.safetensors",
+    }
+    return replacements.get(value, value)
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -110,8 +118,8 @@ class Settings(BaseSettings):
     local_flux_i2i_one_workflow_path: str = DEFAULT_LOCAL_FLUX_I2I_ONE_WORKFLOW_PATH
     local_flux_i2i_two_workflow_path: str = DEFAULT_LOCAL_FLUX_I2I_TWO_WORKFLOW_PATH
     local_flux_model_path: str = r"flux2\flux-2-klein-9b-fp8mixed.safetensors"
-    local_flux_vae_path: str = "flux2-vae.safetensors"
-    local_flux_text_encoder_path: str = "qwen_3_8b_fp8mixed.safetensors"
+    local_flux_vae_path: str = r"flux\flux2-vae.safetensors"
+    local_flux_text_encoder_path: str = r"qwen\qwen_3_8b_fp8mixed.safetensors"
     local_flux_width: int = Field(default=1024, ge=64, le=4096)
     local_flux_height: int = Field(default=1024, ge=64, le=4096)
     local_flux_seed: int | None = None
@@ -229,7 +237,7 @@ class Settings(BaseSettings):
         stripped = value.strip()
         if not stripped:
             raise ValueError("Local Flux settings cannot be empty.")
-        return stripped
+        return normalize_local_flux_model_value(stripped)
 
     @model_validator(mode="after")
     def ensure_codex_default_model_is_listed(self) -> "Settings":

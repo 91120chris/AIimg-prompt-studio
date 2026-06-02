@@ -13,6 +13,7 @@ from app.settings import (
     DEFAULT_CODEX_VERBOSITY_OPTIONS,
     DEFAULT_IMAGE_PROVIDER_OPTIONS,
     Settings,
+    normalize_local_flux_model_value,
     normalize_codex_default_model,
     normalize_codex_model_options,
     parse_csv,
@@ -202,7 +203,7 @@ def _apply_local_flux_settings(settings: Settings, values: Mapping[str, object])
     for key in string_fields:
         value = values.get(key)
         if isinstance(value, str) and value.strip():
-            setattr(settings, key, value.strip())
+            setattr(settings, key, normalize_local_flux_model_value(value.strip()))
 
     int_ranges = {
         "local_flux_width": (64, 4096),

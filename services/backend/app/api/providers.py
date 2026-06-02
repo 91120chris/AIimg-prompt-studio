@@ -20,7 +20,12 @@ from app.schemas.provider import (
     OllamaModelsResponse,
     OllamaStatusResponse,
 )
-from app.settings import CODEX_MODEL_OPTION_SET, DEFAULT_CODEX_MODEL_OPTIONS, Settings
+from app.settings import (
+    CODEX_MODEL_OPTION_SET,
+    DEFAULT_CODEX_MODEL_OPTIONS,
+    Settings,
+    normalize_local_flux_model_value,
+)
 
 router = APIRouter()
 
@@ -389,6 +394,7 @@ def patch_local_flux_settings(
             continue
         value = _nonblank(getattr(payload, payload_field), settings_field)
         if value is not None:
+            value = normalize_local_flux_model_value(value)
             setattr(settings, settings_field, value)
             updates[settings_field] = value
 

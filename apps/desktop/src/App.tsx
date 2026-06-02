@@ -110,8 +110,8 @@ const fallbackLocalFluxSettings: LocalFluxSettingsResponse = {
   i2i_two_workflow_path:
     "workflow/Flux 2 Klein 9B FP8 (Distilled)/Flux 2 Klein 9B FP8 (Distilled) - Two Images Edit.json",
   model_path: "flux2\\flux-2-klein-9b-fp8mixed.safetensors",
-  vae_path: "flux2-vae.safetensors",
-  text_encoder_path: "qwen_3_8b_fp8mixed.safetensors",
+  vae_path: "flux\\flux2-vae.safetensors",
+  text_encoder_path: "qwen\\qwen_3_8b_fp8mixed.safetensors",
   width: 1024,
   height: 1024,
   seed: null,
@@ -1221,7 +1221,6 @@ function App() {
           ollamaPayload,
           ollamaModelsPayload,
           localFluxPayload,
-          localFluxSettingsPayload,
           secretsPayload,
         ] = await Promise.allSettled([
           fetchJson("/settings/safe", safeSettingsResponseSchema, controller.signal),
@@ -1230,11 +1229,6 @@ function App() {
           fetchJson("/providers/ollama/status", ollamaStatusResponseSchema, controller.signal),
           fetchJson("/providers/ollama/models", ollamaModelsResponseSchema, controller.signal),
           fetchJson("/providers/local-flux/status", localFluxStatusResponseSchema, controller.signal),
-          fetchJson(
-            "/providers/local-flux/settings",
-            localFluxSettingsResponseSchema,
-            controller.signal,
-          ),
           fetchJson("/security/secrets/status", secretStatusResponseSchema, controller.signal),
         ]);
 
@@ -1256,9 +1250,6 @@ function App() {
         }
         if (localFluxPayload.status === "fulfilled") {
           setLocalFluxStatus(localFluxPayload.value);
-        }
-        if (localFluxSettingsPayload.status === "fulfilled") {
-          setLocalFluxDraft(localFluxSettingsPayload.value);
         }
         if (secretsPayload.status === "fulfilled") {
           setSecretStatus(secretsPayload.value);
@@ -2279,11 +2270,11 @@ function App() {
                   "Model",
                   "flux2\\flux-2-klein-9b-fp8mixed.safetensors",
                 )}
-                {renderLocalFluxPathField("vae_path", "VAE", "flux2-vae.safetensors")}
+                {renderLocalFluxPathField("vae_path", "VAE", "flux\\flux2-vae.safetensors")}
                 {renderLocalFluxPathField(
                   "text_encoder_path",
                   "Text encoder",
-                  "qwen_3_8b_fp8mixed.safetensors",
+                  "qwen\\qwen_3_8b_fp8mixed.safetensors",
                 )}
               </section>
 

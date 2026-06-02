@@ -6,7 +6,7 @@ from sqlmodel import select
 
 from app.core.flux_model_manager import (
     FluxInstallError,
-    inspect_flux_diffusers_pipeline_path,
+    inspect_flux_fp8_checkpoint_path,
     install_flux_snapshot,
 )
 from app.core.session_workspace import new_id
@@ -24,7 +24,7 @@ from app.settings import Settings
 router = APIRouter(prefix="/models", tags=["models"])
 
 FLUX_PROVIDER = "diffusers_flux2_klein_9b_fp8"
-FLUX_LABEL = "FLUX.2 Klein 9B Diffusers"
+FLUX_LABEL = "FLUX.2 Klein 9B FP8"
 
 
 def _engine(request: Request):
@@ -38,7 +38,10 @@ def _settings(request: Request) -> Settings:
 def _path_label(model_path: object) -> str | None:
     if not isinstance(model_path, str) or not model_path.strip():
         return None
-    return Path(model_path).name or "configured"
+    path = Path(model_path)
+    if path.suffix.lower() == ".safetensors":
+        return path.stem or "configured"
+    return path.name or "configured"
 
 
 def _details_from_record(record: ModelStatusRecord | None) -> dict[str, object]:
@@ -83,7 +86,7 @@ def _flux_status_from_record(
         else default_revision
     )
     error_code = details.get("error_code") if isinstance(details.get("error_code"), str) else None
-    path_problem = inspect_flux_diffusers_pipeline_path(model_path) if isinstance(model_path, str) else None
+    path_problem = inspect_flux_fp8_checkpoint_path(model_path) if isinstance(model_path, str) else None
     status = (
         record.status
         if record.status
@@ -155,7 +158,7 @@ def _readiness_from_record(
     details = _details_from_record(record)
     model_path = details.get("model_path")
     path_label = _path_label(model_path)
-    path_problem = inspect_flux_diffusers_pipeline_path(model_path) if isinstance(model_path, str) else None
+    path_problem = inspect_flux_fp8_checkpoint_path(model_path) if isinstance(model_path, str) else None
     hf_token_configured = settings.hf_token is not None
     hf_cache_configured = settings.hf_home is not None or settings.hf_hub_cache is not None
     can_queue_install = hf_token_configured
@@ -331,7 +334,7 @@ def set_flux_path(payload: FluxPathRequest, request: Request) -> FluxStatusRespo
             status_code=422,
             detail={"code": "empty_flux_model_path", "message": "FLUX model path cannot be empty."},
         )
-    path_problem = inspect_flux_diffusers_pipeline_path(model_path)
+    path_problem = inspect_flux_fp8_checkpoint_path(model_path)
     if path_problem is not None:
         raise HTTPException(
             status_code=422,

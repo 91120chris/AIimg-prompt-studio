@@ -5,8 +5,11 @@ from typing import Any
 
 from sqlmodel import Session
 
+from app.core.flux_model_manager import (
+    inspect_flux_fp8_checkpoint_path,
+    select_flux_checkpoint_path,
+)
 from app.core.image_records import register_generated_image
-from app.core.flux_model_manager import inspect_flux_diffusers_pipeline_path
 from app.core.session_workspace import ensure_session_workspace
 from app.db.models import GeneratedImageRecord, GenerationJobRecord
 from app.schemas.errors import StructuredError
@@ -92,7 +95,7 @@ def unload_flux_pipeline() -> None:
 
 def _load_pipeline(settings: Settings, model_path: str):
     resolved_path = Path(model_path).expanduser().resolve()
-    path_problem = inspect_flux_diffusers_pipeline_path(resolved_path)
+    path_problem = inspect_flux_fp8_checkpoint_path(resolved_path)
     if path_problem is not None:
         raise DiffusersFluxProviderError(
             StructuredError(
@@ -101,10 +104,11 @@ def _load_pipeline(settings: Settings, model_path: str):
                 suggestion=path_problem.suggestion,
             )
         )
+    checkpoint_path = select_flux_checkpoint_path(resolved_path)
 
     try:
         import torch
-        from diffusers import DiffusionPipeline
+        from diffusers import Flux2KleinPipeline, Flux2Transformer2DModel
     except ImportError as error:
         raise DiffusersFluxProviderError(
             StructuredError(
@@ -116,26 +120,37 @@ def _load_pipeline(settings: Settings, model_path: str):
 
     device_map, target_device = _device_loading_plan(settings.flux_device_map)
     cache_key = (
-        f"{resolved_path}|{settings.flux_torch_dtype}|"
+        f"{checkpoint_path}|pipeline={settings.flux_pipeline_repo_id}|{settings.flux_torch_dtype}|"
         f"device_map={device_map}|device={target_device}"
     )
     if cache_key in _PIPELINE_CACHE:
         return _PIPELINE_CACHE[cache_key], torch
 
     dtype = _torch_dtype(torch, settings.flux_torch_dtype)
-    kwargs: dict[str, Any] = {"dtype": dtype}
+    transformer_kwargs: dict[str, Any] = {
+        "torch_dtype": dtype,
+        "config": settings.flux_pipeline_repo_id,
+        "subfolder": "transformer",
+    }
+    pipeline_kwargs: dict[str, Any] = {
+        "torch_dtype": dtype,
+    }
+    if settings.hf_token:
+        transformer_kwargs["token"] = settings.hf_token
+        pipeline_kwargs["token"] = settings.hf_token
     if device_map:
-        kwargs["device_map"] = device_map
+        pipeline_kwargs["device_map"] = device_map
 
     try:
-        pipe = DiffusionPipeline.from_pretrained(str(resolved_path), **kwargs)
-    except TypeError:
-        try:
-            kwargs.pop("dtype", None)
-            kwargs["torch_dtype"] = dtype
-            pipe = DiffusionPipeline.from_pretrained(str(resolved_path), **kwargs)
-        except Exception as error:
-            raise _load_provider_error(error) from error
+        transformer = Flux2Transformer2DModel.from_single_file(
+            str(checkpoint_path),
+            **transformer_kwargs,
+        )
+        pipe = Flux2KleinPipeline.from_pretrained(
+            settings.flux_pipeline_repo_id,
+            transformer=transformer,
+            **pipeline_kwargs,
+        )
     except Exception as error:
         raise _load_provider_error(error) from error
 

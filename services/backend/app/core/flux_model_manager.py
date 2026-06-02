@@ -11,13 +11,12 @@ from huggingface_hub.errors import (
 
 from app.settings import Settings
 
-DEFAULT_FLUX_DIFFUSERS_REPO_ID = "black-forest-labs/FLUX.2-klein-9b"
-DEFAULT_FLUX_DIFFUSERS_LOCAL_DIR = "local_models/huggingface/flux2-klein-9b"
-DIFFUSERS_MODEL_INDEX = "model_index.json"
-DIFFUSERS_PIPELINE_SUGGESTION = (
-    "Install black-forest-labs/FLUX.2-klein-9b, or choose a local Diffusers pipeline "
-    "folder that contains model_index.json. The FP8 FLUX.2 Klein repos are single-file "
-    "checkpoints and are not supported by this provider yet."
+DEFAULT_FLUX_FP8_REPO_ID = "black-forest-labs/FLUX.2-klein-9b-fp8"
+DEFAULT_FLUX_FP8_LOCAL_DIR = "local_models/huggingface/flux2-klein-9b-fp8"
+DEFAULT_FLUX_PIPELINE_REPO_ID = "black-forest-labs/FLUX.2-klein-9b"
+FLUX_FP8_CHECKPOINT_SUGGESTION = (
+    "Install black-forest-labs/FLUX.2-klein-9b-fp8, or choose a local .safetensors "
+    "file/folder containing the FLUX.2 Klein FP8 checkpoint."
 )
 
 
@@ -113,7 +112,7 @@ def install_flux_snapshot(settings: Settings) -> FluxInstallResult:
             suggestion="Check network access, Hugging Face permissions, and available disk space.",
         ) from error
 
-    problem = inspect_flux_diffusers_pipeline_path(downloaded_path)
+    problem = inspect_flux_fp8_checkpoint_path(downloaded_path)
     if problem is not None:
         raise FluxInstallError(
             code=problem.code,
@@ -121,14 +120,15 @@ def install_flux_snapshot(settings: Settings) -> FluxInstallResult:
             suggestion=problem.suggestion,
         )
 
+    checkpoint_path = select_flux_checkpoint_path(downloaded_path)
     return FluxInstallResult(
-        model_path=str(Path(downloaded_path).resolve()),
+        model_path=str(checkpoint_path.resolve()),
         repo_id=settings.flux_model_repo_id,
         revision=settings.flux_model_revision,
     )
 
 
-def inspect_flux_diffusers_pipeline_path(model_path: str | Path) -> FluxModelPathProblem | None:
+def inspect_flux_fp8_checkpoint_path(model_path: str | Path) -> FluxModelPathProblem | None:
     resolved_path = _resolve_model_path(model_path)
     if not resolved_path.exists():
         return FluxModelPathProblem(
@@ -138,33 +138,37 @@ def inspect_flux_diffusers_pipeline_path(model_path: str | Path) -> FluxModelPat
         )
     if resolved_path.is_file():
         if resolved_path.suffix.lower() == ".safetensors":
-            return FluxModelPathProblem(
-                code="flux_single_file_checkpoint_unsupported",
-                message="The configured FLUX path is a single-file checkpoint, not a Diffusers pipeline folder.",
-                suggestion=DIFFUSERS_PIPELINE_SUGGESTION,
-            )
+            return None
         return FluxModelPathProblem(
-            code="flux_model_path_not_directory",
-            message="The configured FLUX model path is a file, not a Diffusers pipeline folder.",
-            suggestion=DIFFUSERS_PIPELINE_SUGGESTION,
+            code="flux_checkpoint_file_invalid",
+            message="The configured FLUX model path is not a .safetensors checkpoint file.",
+            suggestion=FLUX_FP8_CHECKPOINT_SUGGESTION,
         )
-    if not (resolved_path / DIFFUSERS_MODEL_INDEX).is_file():
-        safetensors = list(resolved_path.glob("*.safetensors"))
-        if safetensors:
-            return FluxModelPathProblem(
-                code="flux_single_file_checkpoint_unsupported",
-                message=(
-                    "The configured FLUX folder contains single-file checkpoint weights, "
-                    "but not a Diffusers pipeline model_index.json."
-                ),
-                suggestion=DIFFUSERS_PIPELINE_SUGGESTION,
-            )
+    if not list(resolved_path.glob("*.safetensors")):
         return FluxModelPathProblem(
-            code="flux_model_index_missing",
-            message="The configured FLUX folder is missing Diffusers model_index.json.",
-            suggestion=DIFFUSERS_PIPELINE_SUGGESTION,
+            code="flux_checkpoint_missing",
+            message="The configured FLUX folder does not contain a .safetensors checkpoint.",
+            suggestion=FLUX_FP8_CHECKPOINT_SUGGESTION,
         )
     return None
+
+
+def select_flux_checkpoint_path(model_path: str | Path) -> Path:
+    problem = inspect_flux_fp8_checkpoint_path(model_path)
+    if problem is not None:
+        raise FluxInstallError(
+            code=problem.code,
+            message=problem.message,
+            suggestion=problem.suggestion,
+        )
+    resolved_path = _resolve_model_path(model_path)
+    if resolved_path.is_file():
+        return resolved_path
+    candidates = sorted(
+        resolved_path.glob("*.safetensors"),
+        key=lambda path: ("fp8" not in path.name.lower(), "flux" not in path.name.lower(), path.name.lower()),
+    )
+    return candidates[0]
 
 
 def _http_install_error(status_code: int | None) -> FluxInstallError:

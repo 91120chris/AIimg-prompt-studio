@@ -17,6 +17,14 @@ dependencies = [
     "uvicorn[standard]>=0.34.0,<1.0.0",
 ]
 
+[project.optional-dependencies]
+flux = [
+    "accelerate>=1.12.0,<2.0.0",
+    "diffusers>=0.36.0,<1.0.0",
+    "torch>=2.9.0,<3.0.0",
+    "transformers>=4.57.0,<5.0.0",
+]
+
 [dependency-groups]
 dev = [
     "mypy>=1.15.0,<2.0.0",

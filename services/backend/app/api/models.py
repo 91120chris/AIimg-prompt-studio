@@ -8,6 +8,7 @@ from app.core.flux_model_manager import FluxInstallError, install_flux_snapshot
 from app.core.session_workspace import new_id
 from app.db.models import LogRecord, ModelStatusRecord
 from app.db.session import new_session
+from app.providers.diffusers.flux_image_provider import unload_flux_pipeline
 from app.schemas.model_management import (
     FluxPathRequest,
     FluxReadinessResponse,
@@ -303,6 +304,7 @@ def install_flux(request: Request) -> FluxStatusResponse:
 @router.post("/flux/unload", response_model=FluxStatusResponse)
 def unload_flux(request: Request) -> FluxStatusResponse:
     settings = _settings(request)
+    unload_flux_pipeline()
     with new_session(_engine(request)) as db:
         record = _upsert_flux_record(db, "unloaded", log_message="FLUX provider unloaded.")
         return _flux_status_from_record(record, settings)

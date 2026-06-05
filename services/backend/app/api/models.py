@@ -41,3 +41,12 @@ def list_models(request: Request) -> list[ModelInfoResponse]:
             message=message,
         )
     ]
+
+
+@router.get("/loras", response_model=list[str])
+def list_loras(request: Request) -> list[str]:
+    settings = _settings(request)
+    try:
+        return LocalFluxClient(settings).get_models("loras")
+    except LocalFluxClientError:
+        return []

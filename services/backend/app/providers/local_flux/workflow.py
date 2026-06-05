@@ -28,7 +28,7 @@ WIDGET_INPUTS: dict[str, list[str | None]] = {
     "FluxGuidance": ["guidance"],
     "LoadImage": ["image", "upload"],
     "SaveImage": ["filename_prefix"],
-    "ImageScaleToTotalPixels": ["upscale_method", "megapixels"],
+    "ImageScaleToTotalPixels": ["upscale_method", "megapixels", "resolution_steps"],
 }
 
 
@@ -164,6 +164,9 @@ def patch_prompt(
         for node, image_name in zip(load_image_nodes, uploaded_reference_names, strict=False):
             node.setdefault("inputs", {})["image"] = image_name
             node.setdefault("inputs", {})["upload"] = "image"
+
+    if payload.parameters.lora_name:
+        _inject_lora(patched, payload.parameters.lora_name, payload.parameters.lora_weight)
 
     if missing:
         raise LocalFluxWorkflowError(
@@ -347,3 +350,50 @@ def _patch_optional_first_input(
     if not nodes:
         return
     nodes[0].setdefault("inputs", {})[input_name] = value
+
+
+def _find_node_id(prompt: dict[str, Any], class_types: list[str]) -> str | None:
+    class_type_set = set(class_types)
+    for node_id, node in prompt.items():
+        if isinstance(node, dict) and node.get("class_type") in class_type_set:
+            return node_id
+    return None
+
+
+def _inject_lora(prompt: dict[str, Any], lora_name: str, lora_weight: float) -> None:
+    unet_id = _find_node_id(prompt, ["UNETLoader"])
+    clip_id = _find_node_id(prompt, ["CLIPLoader", "DualCLIPLoader"])
+    if unet_id is None or clip_id is None:
+        return
+
+    lora_id = "lora_inject_0"
+    counter = 0
+    while lora_id in prompt:
+        counter += 1
+        lora_id = f"lora_inject_{counter}"
+
+    prompt[lora_id] = {
+        "class_type": "LoraLoader",
+        "inputs": {
+            "model": [unet_id, 0],
+            "clip": [clip_id, 0],
+            "lora_name": lora_name,
+            "strength_model": lora_weight,
+            "strength_clip": lora_weight,
+        },
+    }
+
+    for node_id, node in prompt.items():
+        if node_id == lora_id:
+            continue
+        inputs = node.get("inputs")
+        if not isinstance(inputs, dict):
+            continue
+        for key, value in list(inputs.items()):
+            if not isinstance(value, list) or len(value) != 2:
+                continue
+            ref_id, ref_out = value
+            if str(ref_id) == unet_id and ref_out == 0:
+                inputs[key] = [lora_id, 0]
+            elif str(ref_id) == clip_id and ref_out == 0:
+                inputs[key] = [lora_id, 1]

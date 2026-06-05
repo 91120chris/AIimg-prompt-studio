@@ -13,6 +13,8 @@ class GenerationParameters(StrictBaseModel):
     steps: int
     guidance: float
     seed: int | None = None
+    lora_name: str | None = None
+    lora_weight: float = 0.8
 
 
 class GenerationConfirmRequest(StrictBaseModel):

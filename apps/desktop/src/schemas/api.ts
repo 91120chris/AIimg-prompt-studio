@@ -332,7 +332,6 @@ export const registryPatchProposalsResponseSchema = z.array(registryPatchProposa
 export const promptVersionsResponseSchema = z.array(promptVersionResponseSchema);
 export const modelInfoListResponseSchema = z.array(modelInfoResponseSchema);
 export const logsResponseSchema = z.array(logResponseSchema);
-export const loraListResponseSchema = z.array(z.string());
 
 export type HealthResponse = z.infer<typeof healthResponseSchema>;
 export type CodexStatusResponse = z.infer<typeof codexStatusResponseSchema>;
@@ -362,4 +361,3 @@ export type LocalFluxWorkflowValidationResponse = z.infer<
   typeof localFluxWorkflowValidationResponseSchema
 >;
 export type LogResponse = z.infer<typeof logResponseSchema>;
-export type LoraListResponse = z.infer<typeof loraListResponseSchema>;

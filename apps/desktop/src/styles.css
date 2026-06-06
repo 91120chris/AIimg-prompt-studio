@@ -718,27 +718,6 @@ p {
   line-height: 1.25;
 }
 
-.lora-controls {
-  display: grid;
-  gap: 8px;
-  padding-top: 2px;
-  border-top: 1px solid #e0e6eb;
-}
-
-.lora-controls label {
-  display: grid;
-  gap: 5px;
-  color: #435566;
-  font-size: 12px;
-  line-height: 1.2;
-}
-
-.lora-controls select,
-.lora-controls input[type="range"] {
-  width: 100%;
-  min-width: 0;
-}
-
 .context-toggles input {
   width: 16px;
   min-width: 16px;

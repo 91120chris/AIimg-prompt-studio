@@ -63,7 +63,11 @@ def normalize_codex_default_model(value: str | None) -> str:
 
 
 def normalize_local_flux_model_value(value: str) -> str:
-    return value
+    replacements = {
+        "flux2-vae.safetensors": r"flux\flux2-vae.safetensors",
+        "qwen_3_8b_fp8mixed.safetensors": r"qwen\qwen_3_8b_fp8mixed.safetensors",
+    }
+    return replacements.get(value, value)
 
 
 class Settings(BaseSettings):

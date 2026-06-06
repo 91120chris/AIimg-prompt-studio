@@ -47,7 +47,6 @@ import {
   localFluxStatusResponseSchema,
   localFluxWorkflowValidationResponseSchema,
   logsResponseSchema,
-  loraListResponseSchema,
   modelInfoListResponseSchema,
   ollamaModelsResponseSchema,
   ollamaStatusResponseSchema,
@@ -402,9 +401,6 @@ function App() {
   const [generationJob, setGenerationJob] = useState<GenerationJobResponse | null>(null);
   const [generationBusy, setGenerationBusy] = useState(false);
   const [generationMessage, setGenerationMessage] = useState<string | null>(null);
-  const [loraList, setLoraList] = useState<string[]>([]);
-  const [selectedLora, setSelectedLora] = useState<string | null>(null);
-  const [loraWeight, setLoraWeight] = useState(0.8);
   const [feedbackQuestionnaireContext, setFeedbackQuestionnaireContext] =
     useState<FeedbackQuestionnaireContext | null>(null);
   const isCodexAgent = agentProvider === "codex_cli";
@@ -431,15 +427,6 @@ function App() {
       setSelectedTemplateId("");
     }
   }, [selectedTemplateId, templates]);
-
-  useEffect(() => {
-    if (imageProvider !== "local_flux" || backendStatus !== "connected") {
-      return;
-    }
-    fetchJson("/models/loras", loraListResponseSchema)
-      .then((list) => setLoraList(list))
-      .catch(() => setLoraList([]));
-  }, [imageProvider, backendStatus]);
 
   useEffect(() => {
     if (!settingsOpen) {
@@ -1710,8 +1697,6 @@ function App() {
             steps: localFluxDraft.steps,
             guidance: localFluxDraft.guidance,
             seed: seedValue === null ? null : Number.isFinite(seedValue) ? seedValue : null,
-            lora_name: selectedLora,
-            lora_weight: loraWeight,
           },
           reference_image_ids: sortedReferenceImages.map((image) => image.reference_image_id),
           codex_model: codexModels.default_model,
@@ -2141,37 +2126,6 @@ function App() {
               <option value="local_flux">Local Flux</option>
             </select>
           </label>
-          {imageProvider === "local_flux" && (
-            <>
-              <label>
-                LoRA
-                <select
-                  value={selectedLora ?? ""}
-                  onChange={(event) => setSelectedLora(event.target.value || null)}
-                >
-                  <option value="">None</option>
-                  {loraList.map((name) => (
-                    <option key={name} value={name}>
-                      {name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {selectedLora && (
-                <label>
-                  權重 {loraWeight.toFixed(2)}
-                  <input
-                    type="range"
-                    min={-5}
-                    max={5}
-                    step={0.05}
-                    value={loraWeight}
-                    onChange={(event) => setLoraWeight(Number(event.target.value))}
-                  />
-                </label>
-              )}
-            </>
-          )}
         </div>
 
         <div className="top-status">

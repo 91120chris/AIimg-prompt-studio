@@ -79,7 +79,10 @@ CODEX_DEFAULT_MODEL=gpt-5.5
 CODEX_MODEL_OPTIONS=gpt-5.5,gpt-5.4,gpt-5.4-mini,gpt-5.3-codex,gpt-5.3-codex-spark,gpt-5.2
 OLLAMA_BASE_URL=http://localhost:11434
 HF_TOKEN=
+LOCAL_FLUX_LORA_DIR=
 ```
+
+`LOCAL_FLUX_LORA_DIR` 填入存放 LoRA 模型的資料夾絕對路徑（例如 `D:\ComfyUI-portable\ComfyUI_windows_portable\ComfyUI\models\loras`）。留空則 LoRA 功能不顯示可選項目。
 
 不要 commit `.env`。如果你曾經把 Hugging Face token 貼到公開位置，請到 Hugging Face settings 重新產生 token。
 
@@ -152,6 +155,7 @@ workflow/Flux 2 Klein 9B FP8 (Distilled)/
 - I2I one-image / two-image workflow path。
 - model / VAE / text encoder 路徑。
 - width、height、seed、steps、cfg、sampler、scheduler、denoise、guidance、output prefix。
+- LoRA 資料夾路徑（`LOCAL_FLUX_LORA_DIR`）。
 
 ## 啟動與健康檢查
 
@@ -219,6 +223,33 @@ Local Flux I2I 若沒有 reference image，前端會阻擋送出。後端會依 
 - Local Flux seed 空白或 `null` 時，每次生成都由後端產生新的 random seed。
 - 明確填入 seed 時，會固定使用該 seed，方便重現。
 - UI 會顯示圖片實際 seed，但不會自動把 random seed 寫回輸入框，避免下一次不小心被鎖定。
+
+### LoRA 模型掛載
+
+Local Flux 支援在生成時動態掛載 LoRA 模型，T2I 與 I2I 均可使用。
+
+**前置設定：**
+
+1. 在 `.env` 填入 LoRA 資料夾路徑：
+
+```env
+LOCAL_FLUX_LORA_DIR=D:\ComfyUI-portable\ComfyUI_windows_portable\ComfyUI\models\loras
+```
+
+2. 將 `.safetensors` 或 `.pt` 格式的 LoRA 檔案放入該資料夾。
+3. 重新啟動 Backend，或重新整理頁面讓前端重新載入模型清單。
+
+**使用方式：**
+
+1. 在頂部工具列選擇 `Local Flux` 作為圖像 Provider。
+2. 工具列會出現 **LoRA** 下拉選單，選項由 LoRA 資料夾內的檔案自動生成。
+3. 選擇 LoRA 後，旁邊會出現 **LoRA 權重** 水平拉桿。
+4. 拖動拉桿調整權重，範圍 `-5.00` 到 `+5.00`，預設為 `0.00`。
+5. 不需要使用 LoRA 時，下拉選單選擇「— 不使用 LoRA —」即可。
+
+**VRAM 管理：**
+
+切換不同 LoRA 或從有 LoRA 切回無 LoRA 時，Backend 會自動呼叫 ComfyUI 的 `/free` 釋放舊 LoRA 的 VRAM，避免連續生成時出現 Out of Memory 錯誤。
 
 ### Feedback / prompt refinement
 
@@ -391,6 +422,18 @@ cmd /c codex --version
 - 確認 Local Flux settings 裡的 model path/name 與 ComfyUI workflow node 可對應。
 - 查看 ComfyUI terminal log，通常會指出缺少哪個 node、model 或 input。
 
+### LoRA 下拉選單沒有選項
+
+- 確認 `.env` 中 `LOCAL_FLUX_LORA_DIR` 已設定正確的絕對路徑。
+- 確認路徑內有 `.safetensors` 或 `.pt` 檔案。
+- 重新啟動 Backend 或在前端重新開啟 Local Flux 設定後儲存，會觸發重新掃描。
+
+### LoRA 生成出現 Out of Memory
+
+- 切換 LoRA 後第一次生成可能需要較長時間，ComfyUI 正在重新載入模型。
+- 若持續 OOM，嘗試將權重設為 `0.00` 並生成一次，讓 VRAM 釋放後再重試。
+- 確認 ComfyUI 連線正常，`/free` API 才能順利清除 VRAM。
+
 ### 問卷格式驗證失敗
 
 後端會嘗試 repair agent output。若仍失敗，會降級成單題文字問卷，讓使用者手動補需求，流程不會中斷。
@@ -412,6 +455,7 @@ cmd /c codex --version
 - `GET /providers/local-flux/status`
 - `GET /providers/local-flux/settings`
 - `PATCH /providers/local-flux/settings`
+- `GET /providers/local-flux/loras`
 - `POST /providers/local-flux/workflows/validate`
 - `POST /sessions`
 - `GET /sessions`

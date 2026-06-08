@@ -28,7 +28,8 @@ WIDGET_INPUTS: dict[str, list[str | None]] = {
     "FluxGuidance": ["guidance"],
     "LoadImage": ["image", "upload"],
     "SaveImage": ["filename_prefix"],
-    "ImageScaleToTotalPixels": ["upscale_method", "megapixels"],
+    "ImageScaleToTotalPixels": ["upscale_method", "megapixels", "resolution_steps"],
+    "LoraLoader": ["lora_name", "strength_model", "strength_clip"],
 }
 
 
@@ -112,15 +113,21 @@ def patch_prompt(
         patched,
         ["UNETLoader"],
         "unet_name",
-        settings.local_flux_model_path,
+        _resolve_unet_path(settings.local_flux_model_path),
         missing,
     )
-    _patch_first_input(patched, ["VAELoader"], "vae_name", settings.local_flux_vae_path, missing)
+    _patch_first_input(
+        patched,
+        ["VAELoader"],
+        "vae_name",
+        _fix_legacy_model_path(settings.local_flux_vae_path),
+        missing,
+    )
     _patch_first_input(
         patched,
         ["CLIPLoader"],
         "clip_name",
-        settings.local_flux_text_encoder_path,
+        _fix_legacy_model_path(settings.local_flux_text_encoder_path),
         missing,
     )
 
@@ -170,6 +177,11 @@ def patch_prompt(
             "Local Flux workflow is missing required bindings.",
             sorted(set(missing)),
         )
+
+    lora_name = payload.parameters.lora_name
+    if lora_name and lora_name.strip():
+        patched = _inject_lora_node(patched, lora_name.strip(), float(payload.parameters.lora_weight))
+
     return patched
 
 
@@ -347,3 +359,73 @@ def _patch_optional_first_input(
     if not nodes:
         return
     nodes[0].setdefault("inputs", {})[input_name] = value
+
+
+def _fix_legacy_model_path(path: str) -> str:
+    """Strip incorrect subdirectory prefixes added by the legacy normalize function."""
+    # "flux\flux2-vae.safetensors" -> "flux2-vae.safetensors" (NOT flux2\...)
+    if path.startswith(("flux\\", "flux/")):
+        stripped = path[5:]
+        if not stripped.startswith(("flux2\\", "flux2/")):
+            return stripped
+    # "qwen\qwen_3_8b_fp8mixed.safetensors" -> "qwen_3_8b_fp8mixed.safetensors"
+    if path.startswith(("qwen\\", "qwen/")):
+        return path[5:]
+    # Capitalized workaround (e.g. "Qwen_..." -> "qwen_...")
+    if len(path) > 1 and path[0].isupper():
+        lowered = path[0].lower() + path[1:]
+        if lowered.startswith("qwen_"):
+            return lowered
+    return path
+
+
+def _resolve_unet_path(path: str) -> str:
+    """Normalize UNETLoader path to use backslash; recover from corruption."""
+    fixed = path.replace("/", "\\")
+    # Detect corruption (form-feed char 0x0C replacing \f in flux2\flux-...)
+    if "\x0c" in fixed or (fixed and not fixed.startswith("flux2\\")):
+        if "klein" in fixed or "flux-2" in fixed.lower():
+            return r"flux2\flux-2-klein-9b-fp8mixed.safetensors"
+    return fixed
+
+
+def _inject_lora_node(prompt: dict[str, Any], lora_name: str, lora_weight: float) -> dict[str, Any]:
+    """Dynamically insert a LoraLoader between the model/clip loaders and their consumers."""
+    unet_id: str | None = None
+    clip_id: str | None = None
+    for node_id, node in prompt.items():
+        ct = node.get("class_type")
+        if ct == "UNETLoader" and unet_id is None:
+            unet_id = node_id
+        elif ct in ("CLIPLoader", "DualCLIPLoader") and clip_id is None:
+            clip_id = node_id
+
+    if not unet_id and not clip_id:
+        return prompt
+
+    lora_id = "lora_injected"
+    lora_inputs: dict[str, Any] = {
+        "lora_name": lora_name,
+        "strength_model": lora_weight,
+        "strength_clip": lora_weight,
+    }
+    if unet_id:
+        lora_inputs["model"] = [unet_id, 0]
+    if clip_id:
+        lora_inputs["clip"] = [clip_id, 0]
+
+    prompt[lora_id] = {"class_type": "LoraLoader", "inputs": lora_inputs}
+
+    for node_id, node in prompt.items():
+        if node_id == lora_id:
+            continue
+        for input_key, input_val in list(node.get("inputs", {}).items()):
+            if not isinstance(input_val, list) or len(input_val) != 2:
+                continue
+            src_id, src_slot = input_val
+            if unet_id and str(src_id) == str(unet_id) and src_slot == 0:
+                node["inputs"][input_key] = [lora_id, 0]
+            elif clip_id and str(src_id) == str(clip_id) and src_slot == 0:
+                node["inputs"][input_key] = [lora_id, 1]
+
+    return prompt

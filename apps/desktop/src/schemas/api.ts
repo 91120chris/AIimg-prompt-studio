@@ -275,6 +275,11 @@ export const localFluxSettingsResponseSchema = z.object({
   guidance: z.number(),
   output_prefix: z.string(),
   timeout_seconds: z.number(),
+  lora_dir: z.string().default(""),
+});
+
+export const loraListResponseSchema = z.object({
+  loras: z.array(z.string()),
 });
 
 export const localFluxWorkflowValidationResponseSchema = z.object({
@@ -357,6 +362,7 @@ export type TemplatePreviewResponse = z.infer<typeof templatePreviewResponseSche
 export type ModelInfoResponse = z.infer<typeof modelInfoResponseSchema>;
 export type LocalFluxStatusResponse = z.infer<typeof localFluxStatusResponseSchema>;
 export type LocalFluxSettingsResponse = z.infer<typeof localFluxSettingsResponseSchema>;
+export type LoraListResponse = z.infer<typeof loraListResponseSchema>;
 export type LocalFluxWorkflowValidationResponse = z.infer<
   typeof localFluxWorkflowValidationResponseSchema
 >;

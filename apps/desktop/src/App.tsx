@@ -47,6 +47,7 @@ import {
   localFluxStatusResponseSchema,
   localFluxWorkflowValidationResponseSchema,
   logsResponseSchema,
+  loraListResponseSchema,
   modelInfoListResponseSchema,
   ollamaModelsResponseSchema,
   ollamaStatusResponseSchema,
@@ -142,6 +143,7 @@ const fallbackLocalFluxSettings: LocalFluxSettingsResponse = {
   guidance: 3.5,
   output_prefix: "aiimg",
   timeout_seconds: 600,
+  lora_dir: "",
 };
 
 const backendBaseUrl = __FRONTEND_API_BASE_URL__.replace(/\/$/, "");
@@ -381,6 +383,9 @@ function App() {
   const [localFluxMessage, setLocalFluxMessage] = useState<string | null>(null);
   const [localFluxBusy, setLocalFluxBusy] = useState(false);
   const [localFluxPickerBusy, setLocalFluxPickerBusy] = useState<LocalFluxPathField | null>(null);
+  const [loraOptions, setLoraOptions] = useState<string[]>([]);
+  const [selectedLoraName, setSelectedLoraName] = useState<string | null>(null);
+  const [loraWeight, setLoraWeight] = useState(0.0);
   const [backendStatus, setBackendStatus] = useState<BackendStatus>("checking");
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [codexStatus, setCodexStatus] = useState<CodexStatusResponse | null>(null);
@@ -1293,13 +1298,15 @@ function App() {
     setLocalFluxBusy(true);
     setLocalFluxMessage(null);
     try {
-      const [settingsPayload, statusPayload] = await Promise.all([
+      const [settingsPayload, statusPayload, loraPayload] = await Promise.all([
         fetchJson("/providers/local-flux/settings", localFluxSettingsResponseSchema),
         fetchJson("/providers/local-flux/status", localFluxStatusResponseSchema),
+        fetchJson("/providers/local-flux/loras", loraListResponseSchema).catch(() => ({ loras: [] })),
       ]);
       setLocalFluxDraft(settingsPayload);
       setLocalFluxStatus(statusPayload);
       setLocalFluxMessage(statusPayload.message);
+      setLoraOptions(loraPayload.loras);
     } catch (error) {
       setLocalFluxMessage(error instanceof Error ? error.message : "無法載入 Local Flux 設定");
     } finally {
@@ -1341,6 +1348,7 @@ function App() {
           guidance: localFluxDraft.guidance,
           output_prefix: localFluxDraft.output_prefix,
           timeout_seconds: localFluxDraft.timeout_seconds,
+          lora_dir: localFluxDraft.lora_dir,
         }),
       });
       if (!response.ok) {
@@ -1697,6 +1705,8 @@ function App() {
             steps: localFluxDraft.steps,
             guidance: localFluxDraft.guidance,
             seed: seedValue === null ? null : Number.isFinite(seedValue) ? seedValue : null,
+            lora_name: imageProvider === "local_flux" ? (selectedLoraName || null) : null,
+            lora_weight: imageProvider === "local_flux" ? loraWeight : 0.0,
           },
           reference_image_ids: sortedReferenceImages.map((image) => image.reference_image_id),
           codex_model: codexModels.default_model,
@@ -1768,6 +1778,7 @@ function App() {
           localFluxPayload,
           secretsPayload,
           templatesPayload,
+          loraPayload,
         ] = await Promise.allSettled([
           fetchJson("/settings/safe", safeSettingsResponseSchema, controller.signal),
           fetchJson("/providers/codex/status", codexStatusResponseSchema, controller.signal),
@@ -1777,6 +1788,7 @@ function App() {
           fetchJson("/providers/local-flux/status", localFluxStatusResponseSchema, controller.signal),
           fetchJson("/security/secrets/status", secretStatusResponseSchema, controller.signal),
           fetchJson("/templates", registryItemsResponseSchema, controller.signal),
+          fetchJson("/providers/local-flux/loras", loraListResponseSchema, controller.signal),
         ]);
 
         if (settingsPayload.status === "fulfilled") {
@@ -1803,6 +1815,9 @@ function App() {
         }
         if (templatesPayload.status === "fulfilled") {
           setTemplates(templatesPayload.value);
+        }
+        if (loraPayload.status === "fulfilled") {
+          setLoraOptions(loraPayload.value.loras);
         }
       } catch (error) {
         if (controller.signal.aborted) {
@@ -2126,6 +2141,46 @@ function App() {
               <option value="local_flux">Local Flux</option>
             </select>
           </label>
+          {imageProvider === "local_flux" && (
+            <>
+              <label>
+                LoRA
+                <select
+                  value={selectedLoraName ?? ""}
+                  onChange={(event) => {
+                    setSelectedLoraName(event.target.value || null);
+                  }}
+                >
+                  <option value="">— 不使用 LoRA —</option>
+                  {loraOptions.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                LoRA 權重
+                <span style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                  <input
+                    type="range"
+                    min={-5}
+                    max={5}
+                    step={0.01}
+                    value={loraWeight}
+                    disabled={!selectedLoraName}
+                    style={{ width: "8rem" }}
+                    onChange={(event) => {
+                      setLoraWeight(parseFloat(event.target.value));
+                    }}
+                  />
+                  <span style={{ minWidth: "2.8rem", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                    {loraWeight.toFixed(2)}
+                  </span>
+                </span>
+              </label>
+            </>
+          )}
         </div>
 
         <div className="top-status">
@@ -3339,6 +3394,16 @@ function App() {
                       value={localFluxDraft.timeout_seconds}
                       onChange={(event) =>
                         updateLocalFluxDraft("timeout_seconds", Number(event.target.value))
+                      }
+                    />
+                  </label>
+                  <label>
+                    LoRA 資料夾路徑
+                    <input
+                      value={localFluxDraft.lora_dir}
+                      placeholder="C:\path\to\loras"
+                      onChange={(event) =>
+                        updateLocalFluxDraft("lora_dir", event.target.value)
                       }
                     />
                   </label>

@@ -98,6 +98,17 @@ class LocalFluxClient:
             raise LocalFluxClientError("Local Flux history endpoint returned an invalid payload.")
         return payload
 
+    def free_memory(self) -> None:
+        try:
+            with httpx.Client(timeout=10) as client:
+                response = client.post(
+                    self._url("/free"),
+                    json={"unload_models": True, "free_memory": True},
+                )
+                self._raise_for_status(response)
+        except (httpx.HTTPError, ValueError) as error:
+            raise LocalFluxClientError(str(error)) from error
+
     def view_image(self, *, filename: str, subfolder: str = "", image_type: str = "output") -> bytes:
         try:
             with httpx.Client(timeout=self.timeout) as client:

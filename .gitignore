@@ -30,3 +30,7 @@ apps/desktop/src-tauri/Cargo.lock
 Thumbs.db
 .idea/
 .vscode/
+
+# Local startup scripts (contain machine-specific paths)
+restart_backend.bat
+start_desktop.bat

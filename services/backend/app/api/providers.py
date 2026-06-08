@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from fastapi import APIRouter, HTTPException, Request
 
 from app.core.app_settings_store import persist_app_settings
@@ -135,6 +137,19 @@ def select_ollama_model(settings: Settings, models: list[str]) -> str | None:
     return models[0] if models else None
 
 
+def _scan_lora_files(lora_dir: str) -> list[str]:
+    if not lora_dir:
+        return []
+    path = Path(lora_dir).expanduser()
+    if not path.is_dir():
+        return []
+    return sorted(
+        f.name
+        for f in path.iterdir()
+        if f.is_file() and f.suffix in (".safetensors", ".pt")
+    )
+
+
 def local_flux_settings_response(settings: Settings) -> LocalFluxSettingsResponse:
     return LocalFluxSettingsResponse(
         provider="local_flux",
@@ -156,6 +171,7 @@ def local_flux_settings_response(settings: Settings) -> LocalFluxSettingsRespons
         guidance=settings.local_flux_guidance,
         output_prefix=settings.local_flux_output_prefix,
         timeout_seconds=settings.local_flux_timeout_seconds,
+        lora_dir=settings.local_flux_lora_dir,
     )
 
 
@@ -429,9 +445,20 @@ def patch_local_flux_settings(
             setattr(settings, settings_field, value)
             updates[settings_field] = value
 
+    if "lora_dir" in fields_set:
+        value = (payload.lora_dir or "").strip()
+        settings.local_flux_lora_dir = value
+        updates["local_flux_lora_dir"] = value
+
     if updates:
         persist_request_settings(request, updates)
     return local_flux_settings_response(settings)
+
+
+@router.get("/providers/local-flux/loras")
+def local_flux_loras(request: Request) -> dict[str, list[str]]:
+    settings = get_request_settings(request)
+    return {"loras": _scan_lora_files(settings.local_flux_lora_dir)}
 
 
 @router.post(

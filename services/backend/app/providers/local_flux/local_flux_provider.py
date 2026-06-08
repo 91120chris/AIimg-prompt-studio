@@ -1,5 +1,6 @@
 import time
 from pathlib import Path
+from typing import Optional
 
 from sqlmodel import Session
 
@@ -19,6 +20,8 @@ from app.providers.local_flux.workflow import (
 from app.schemas.errors import StructuredError
 from app.schemas.generation import GenerationConfirmRequest
 from app.settings import Settings
+
+_last_lora_name: Optional[str] = "__unset__"
 
 
 class LocalFluxProviderError(RuntimeError):
@@ -50,6 +53,15 @@ class LocalFluxProvider:
                     suggestion="請先啟動本機 ComfyUI/Flux backend，或在 Local Flux 設定中修改 Server URL。",
                 )
             ) from error
+
+        global _last_lora_name
+        current_lora = payload.parameters.lora_name or None
+        if _last_lora_name != "__unset__" and current_lora != _last_lora_name:
+            try:
+                self.client.free_memory()
+            except LocalFluxClientError:
+                pass
+        _last_lora_name = current_lora
 
         try:
             uploaded_reference_names = [

@@ -63,11 +63,7 @@ def normalize_codex_default_model(value: str | None) -> str:
 
 
 def normalize_local_flux_model_value(value: str) -> str:
-    replacements = {
-        "flux2-vae.safetensors": r"flux\flux2-vae.safetensors",
-        "qwen_3_8b_fp8mixed.safetensors": r"qwen\qwen_3_8b_fp8mixed.safetensors",
-    }
-    return replacements.get(value, value)
+    return value
 
 
 class Settings(BaseSettings):
@@ -131,6 +127,7 @@ class Settings(BaseSettings):
     local_flux_guidance: float = Field(default=3.5, ge=0, le=30)
     local_flux_output_prefix: str = "aiimg"
     local_flux_timeout_seconds: int = Field(default=600, ge=1, le=7200)
+    local_flux_lora_dir: str = ""
     run_local_flux_smoke: bool = False
 
     hf_token: str | None = Field(default=None, repr=False)

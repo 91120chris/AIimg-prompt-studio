@@ -68,6 +68,7 @@ class LocalFluxSettingsResponse(StrictBaseModel):
     guidance: float
     output_prefix: str
     timeout_seconds: int
+    lora_dir: str
 
 
 class LocalFluxSettingsPatch(StrictBaseModel):
@@ -89,6 +90,7 @@ class LocalFluxSettingsPatch(StrictBaseModel):
     guidance: float | None = None
     output_prefix: str | None = None
     timeout_seconds: int | None = None
+    lora_dir: str | None = None
 
 
 class LocalFluxWorkflowValidationRequest(StrictBaseModel):
